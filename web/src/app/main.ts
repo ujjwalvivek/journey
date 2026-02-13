@@ -1,13 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
+import './style.css'
+import '../components/wasm.ts'
 
-<head>
-    <meta charset="UTF-8">
-    <title>The Train Journey</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-
-<body>
+document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
+  <div>
+    <h1>Journey Engine</h1>
     <div class="controls">
         <fieldset>
             <legend>Sky Settings</legend>
@@ -28,9 +24,6 @@
             </div>
         </fieldset>
     </div>
-    <canvas id="bg" width="1920" height="1080"></canvas>
-    <h1>🚂 The Train Journey</h1>
-    <script type="module" src="main.js"></script>
-</body>
-
-</html>
+    <canvas id="bg" width="100%" height="100%"></canvas>
+  </div>
+`;

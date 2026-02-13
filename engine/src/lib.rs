@@ -1,5 +1,5 @@
-use wasm_bindgen::prelude::*;
 use noise::{NoiseFn, Perlin};
+use wasm_bindgen::prelude::*;
 
 fn hex_to_rgb(hex: &str) -> (u8, u8, u8) {
     let hex = hex.trim_start_matches('#');
@@ -106,8 +106,15 @@ pub fn render_scene(
 
     if fog_on {
         apply_fog(
-            &mut buffer, width, height, time,
-            fog_density, fog_opacity, fog_seed, hex_to_rgb(fog_hex), fog_anim_speed,
+            &mut buffer,
+            width,
+            height,
+            time,
+            fog_density,
+            fog_opacity,
+            fog_seed,
+            hex_to_rgb(fog_hex),
+            fog_anim_speed,
         );
     }
     buffer
@@ -120,8 +127,6 @@ pub fn greet() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_hex_to_rgb() {
         let result = super::hex_to_rgb("#87ceeb");

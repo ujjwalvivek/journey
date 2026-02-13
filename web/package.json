@@ -1,0 +1,18 @@
+{
+  "name": "web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build:wasm": "wasm-pack build ../engine --target web --out-dir ../web/pkg",
+    "dev": "npm run build:wasm && vite",
+    "build": "npm run build:wasm && tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.5.0"
+  }
+}

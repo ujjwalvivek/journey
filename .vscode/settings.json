@@ -1,0 +1,38 @@
+{
+    // Enable semantics (syntax highlighting based on types)
+    "editor.semanticHighlighting.enabled": true,
+    // Check code with 'cargo check' continuously
+    "rust-analyzer.checkOnSave": true,
+    "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.check.extraArgs": [
+        "--",
+        "-D",
+        "warnings"
+    ],
+    // Use the fastest linker for Windows (saves build time)
+    "rust-analyzer.cargo.buildScripts.enable": true,
+    // Inlay hints (shows you the types of variables automatically)
+    "editor.inlayHints.enabled": "on",
+    "rust-analyzer.inlayHints.typeHints.enable": true,
+    "rust-analyzer.inlayHints.parameterHints.enable": true,
+    // Format on save using standard 'rustfmt'
+    "editor.formatOnSave": true,
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer"
+    },
+    "[typescript]": {
+        "editor.defaultFormatter": "vscode.typescript-language-features"
+    },
+    // Hide build artifacts from file explorer
+    "files.exclude": {
+        "**/target": true,
+        "**/node_modules": true,
+        "**/dist": true,
+        "**/.vscode": false
+    },
+    "files.watcherExclude": {
+        "**/target/**": true,
+        "**/node_modules/**": true,
+        "**/dist/**": true
+    }
+}

@@ -1,0 +1,165 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run Native (Debug)",
+            "type": "shell",
+            "command": "cargo",
+            "args": [
+                "run",
+                "-p",
+                "game"
+            ],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            }
+        },
+        {
+            "label": "Run Native (Release)",
+            "type": "shell",
+            "command": "cargo",
+            "args": [
+                "run",
+                "-p",
+                "game",
+                "--release"
+            ],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            }
+        },
+        {
+            "label": "Run Web Dev Server",
+            "type": "npm",
+            "script": "dev",
+            "path": "web/",
+            "problemMatcher": [],
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "Quick Web Dev (skip WASM rebuild)",
+            "type": "npm",
+            "script": "dev:quick",
+            "path": "web/",
+            "problemMatcher": [],
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "Build WASM",
+            "type": "shell",
+            "command": "wasm-pack",
+            "args": [
+                "build",
+                "engine",
+                "--target",
+                "web",
+                "--out-dir",
+                "../web/pkg"
+            ],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        },
+        {
+            "label": "Build Native",
+            "type": "shell",
+            "command": "cargo",
+            "args": [
+                "build",
+                "-p",
+                "game"
+            ],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        },
+        {
+            "label": "Run Tests",
+            "type": "shell",
+            "command": "cargo",
+            "args": [
+                "test",
+                "-p",
+                "engine"
+            ],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        },
+        {
+            "label": "Clippy (All)",
+            "type": "shell",
+            "command": "cargo",
+            "args": [
+                "clippy",
+                "-p",
+                "engine",
+                "-p",
+                "game",
+                "--",
+                "-D",
+                "warnings"
+            ],
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        },
+        {
+            "label": "Build All (Native + WASM + Web)",
+            "dependsOn": [
+                "🔧 Build Native",
+                "📦 Build WASM"
+            ],
+            "dependsOrder": "parallel",
+            "problemMatcher": [],
+            "group": "build"
+        }
+    ]
+}

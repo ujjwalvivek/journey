@@ -16,9 +16,7 @@ dist/
 .DS_Store
 Thumbs.db
 .idea/
-.vscode/
 *.swp
-logs/
 !.vscode/extensions.json
 *.suo
 *.ntvs*

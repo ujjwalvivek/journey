@@ -55,7 +55,4 @@ web/dist-ssr
 web/*.local
 
 # Personal Configs
-.github/instructions/
-.github/prompts/
-.github/agents/
-.github/hooks/
+.github

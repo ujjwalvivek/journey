@@ -6,8 +6,8 @@
 //! with egui overlay).
 
 pub mod noise;
-pub mod scene;
 mod runtime;
+pub mod scene;
 
 fn init_logging() {
     #[cfg(not(target_arch = "wasm32"))]

@@ -98,8 +98,7 @@ impl ApplicationHandler for App {
                     .and_then(|w| w.document())
                     .expect("No document");
                 let body = doc.body().expect("No body element");
-                body.append_child(&canvas)
-                    .expect("Failed to append canvas");
+                body.append_child(&canvas).expect("Failed to append canvas");
 
                 let style = canvas.style();
                 let _ = style.set_property("width", "100vw");

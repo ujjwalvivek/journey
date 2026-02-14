@@ -9,21 +9,33 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 noise = "0.8"
 log = "0.4"
-
-# Native-only: rendering + UI
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 wgpu = "27"
 winit = "0.30"
 egui = "0.33"
 egui-wgpu = "0.33"
-egui-winit = "0.33"
 bytemuck = { version = "1", features = ["derive"] }
+web-time = "1"
+
+# Native-only
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+egui-winit = "0.33"
 pollster = "0.4"
 env_logger = "0.11"
 
-# WASM-only: JS interop + panic diagnostics
+# WASM-only (arboard clipboard crate doesn't compile for wasm32)
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+egui-winit = { version = "0.33", default-features = false }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1"
-web-sys = { version = "0.3", features = ["console"] }
+console_log = "1"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "CssStyleDeclaration",
+    "Node",
+    "Window",
+] }

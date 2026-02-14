@@ -1,30 +1,40 @@
 //! Journey Engine — cross-platform rendering engine.
 //!
 //! Re-exports the legacy procedural noise pipeline ([`noise`]) alongside the
-//! new wGPU + egui runtime ([`runtime`], native-only for now).
+//! wGPU + egui runtime ([`runtime`]). Both native and WASM targets use the
+//! same rendering pipeline (CPU noise → GPU texture → full-screen quad
+//! with egui overlay).
 
 pub mod noise;
 pub mod scene;
-
-#[cfg(not(target_arch = "wasm32"))]
 mod runtime;
 
-/// Start the Journey Engine rendering loop.
-///
-/// On native, this blocks until the window is closed (bridged via
-/// `pollster::block_on` in the game binary). On WASM, initialization
-/// hooks are set up but the full engine loop is not yet supported —
-/// use [`noise::render_scene`] for the web rendering path.
-pub async fn run() {
+fn init_logging() {
     #[cfg(not(target_arch = "wasm32"))]
     {
         env_logger::try_init().ok();
-        runtime::start();
     }
 
     #[cfg(target_arch = "wasm32")]
     {
         console_error_panic_hook::set_once();
-        log::info!("WASM native engine loop not yet implemented — use noise::render_scene()");
+        console_log::init_with_level(log::Level::Info).ok();
     }
+}
+
+/// Start the Journey Engine rendering loop.
+///
+/// On native, blocks until the window is closed. On WASM, launches
+/// the event loop into the browser's animation frame system.
+pub async fn run() {
+    init_logging();
+    runtime::start();
+}
+
+/// WASM entry point — called automatically when the module is instantiated.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen(start)]
+pub fn wasm_main() {
+    init_logging();
+    runtime::start();
 }

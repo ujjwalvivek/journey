@@ -1,11 +1,13 @@
-//! Native engine runtime — wGPU rendering loop with egui overlay.
+//! Cross-platform engine runtime — wGPU rendering loop with egui overlay.
 //!
-//! This module is only compiled on non-WASM targets. It owns the window,
-//! GPU resources, and the egui integration, driving the two-pass render
-//! pipeline (world quad + UI overlay) described in the TDD.
+//! Handles both native (desktop) and WASM (web) targets. The core rendering
+//! pipeline (CPU noise → GPU texture → full-screen quad + egui overlay) is
+//! shared; only event-loop bootstrap and async GPU initialization differ.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use web_time::Instant;
 
 use egui_wgpu::ScreenDescriptor;
 use winit::application::ApplicationHandler;
@@ -20,15 +22,35 @@ use crate::scene::SceneParams;
 const NOISE_WIDTH: u32 = 512;
 const NOISE_HEIGHT: u32 = 512;
 
-/// Minimum interval between CPU noise regenerations for animated fog.
-const NOISE_REGEN_INTERVAL: Duration = Duration::from_millis(33); // ~30 Hz
+/// Minimum interval between CPU noise regenerations for animated fog (~30 Hz).
+const NOISE_REGEN_INTERVAL: Duration = Duration::from_millis(33);
 
-/// Launch the native event loop. Blocks until the window is closed.
+// On WASM, async GPU init completes after `resumed` returns. The spawned
+// future writes into this thread-local; the event handler picks it up on
+// the next frame.
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static PENDING_STATE: std::cell::RefCell<Option<EngineState>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Launch the engine event loop. Blocks on native; non-blocking on WASM.
 pub fn start() {
     let event_loop = EventLoop::new().expect("Failed to create event loop");
-    let mut app = App::default();
-    if let Err(e) = event_loop.run_app(&mut app) {
-        log::error!("Event loop exited with error: {e}");
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut app = App::default();
+        if let Err(e) = event_loop.run_app(&mut app) {
+            log::error!("Event loop exited with error: {e}");
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use winit::platform::web::EventLoopExtWebSys;
+        let app = App::default();
+        event_loop.spawn_app(app);
     }
 }
 
@@ -39,13 +61,15 @@ pub fn start() {
 #[derive(Default)]
 struct App {
     state: Option<EngineState>,
+    init_started: bool,
 }
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.state.is_some() {
+        if self.init_started {
             return;
         }
+        self.init_started = true;
 
         let attrs = WindowAttributes::default()
             .with_title("Journey Engine")
@@ -57,8 +81,43 @@ impl ApplicationHandler for App {
                 .expect("Failed to create window"),
         );
 
-        let state = pollster::block_on(EngineState::new(window));
-        self.state = Some(state);
+        // --- Native: synchronous GPU init via pollster -----------------------
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let state = pollster::block_on(EngineState::new(window));
+            self.state = Some(state);
+        }
+
+        // --- WASM: attach canvas to DOM, then async GPU init -----------------
+        #[cfg(target_arch = "wasm32")]
+        {
+            use winit::platform::web::WindowExtWebSys;
+
+            if let Some(canvas) = window.canvas() {
+                let doc = web_sys::window()
+                    .and_then(|w| w.document())
+                    .expect("No document");
+                let body = doc.body().expect("No body element");
+                body.append_child(&canvas)
+                    .expect("Failed to append canvas");
+
+                let style = canvas.style();
+                let _ = style.set_property("width", "100vw");
+                let _ = style.set_property("height", "100vh");
+                let _ = style.set_property("display", "block");
+                let _ = canvas.set_attribute("tabindex", "0");
+                let _ = canvas.focus();
+            }
+
+            let win = window.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let state = EngineState::new(win.clone()).await;
+                PENDING_STATE.with(|cell| {
+                    *cell.borrow_mut() = Some(state);
+                });
+                win.request_redraw();
+            });
+        }
     }
 
     fn window_event(
@@ -67,6 +126,16 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        // On WASM, check whether async init has delivered the state yet.
+        #[cfg(target_arch = "wasm32")]
+        if self.state.is_none() {
+            PENDING_STATE.with(|cell| {
+                if let Some(s) = cell.borrow_mut().take() {
+                    self.state = Some(s);
+                }
+            });
+        }
+
         let Some(state) = &mut self.state else {
             return;
         };

@@ -6,6 +6,7 @@
   "scripts": {
     "build:wasm": "wasm-pack build ../engine --target web --out-dir ../web/pkg",
     "dev": "npm run build:wasm && vite",
+    "dev:quick": "vite",
     "build": "npm run build:wasm && tsc && vite build",
     "preview": "vite preview"
   },

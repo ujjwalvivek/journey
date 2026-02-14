@@ -20,8 +20,8 @@ pub struct SceneParams {
 impl Default for SceneParams {
     fn default() -> Self {
         Self {
-            top_color: [0.529, 0.808, 0.922],     // #87ceeb sky blue
-            bottom_color: [0.282, 0.463, 0.282],   // #487648 forest green
+            top_color: [0.529, 0.808, 0.922],    // #87ceeb sky blue
+            bottom_color: [0.282, 0.463, 0.282], // #487648 forest green
             seed: 42,
             fog_enabled: true,
             fog_density: 3.0,

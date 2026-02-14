@@ -141,12 +141,7 @@ pub fn greet() {
 }
 
 /// Render the scene into a pre-allocated buffer (zero-allocation hot path).
-pub fn render_scene_to_buffer(
-    buffer: &mut [u8],
-    width: u32,
-    height: u32,
-    params: &SceneParams,
-) {
+pub fn render_scene_to_buffer(buffer: &mut [u8], width: u32, height: u32, params: &SceneParams) {
     let top_rgb = color_f32_to_u8(params.top_color);
     let bot_rgb = color_f32_to_u8(params.bottom_color);
     draw_gradient(buffer, width, height, top_rgb, bot_rgb);
@@ -202,6 +197,9 @@ mod tests {
         let (w, h) = (4, 4);
         let mut buf = vec![0u8; (w * h * 4) as usize];
         render_scene_to_buffer(&mut buf, w, h, &params);
-        assert!(buf.iter().any(|&b| b != 0), "Buffer should contain non-zero pixels");
+        assert!(
+            buf.iter().any(|&b| b != 0),
+            "Buffer should contain non-zero pixels"
+        );
     }
 }

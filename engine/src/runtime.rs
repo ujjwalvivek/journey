@@ -158,15 +158,13 @@ impl EngineState {
         log::info!("GPU adapter: {:?}", adapter.get_info().name);
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("Journey Device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::downlevel_webgl2_defaults()
-                        .using_resolution(adapter.limits()),
-                    ..Default::default()
-                },
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("Journey Device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
+                    .using_resolution(adapter.limits()),
+                ..Default::default()
+            })
             .await
             .expect("Failed to create GPU device");
 
@@ -216,28 +214,27 @@ impl EngineState {
         });
 
         // --- Bind group -------------------------------------------------------
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Texture Bind Group Layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Texture Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            });
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Noise Bind Group"),
@@ -305,11 +302,8 @@ impl EngineState {
             None,
             None,
         );
-        let egui_renderer = egui_wgpu::Renderer::new(
-            &device,
-            format,
-            egui_wgpu::RendererOptions::default(),
-        );
+        let egui_renderer =
+            egui_wgpu::Renderer::new(&device, format, egui_wgpu::RendererOptions::default());
 
         // --- Initial noise bake -----------------------------------------------
         let params = SceneParams::default();
@@ -383,8 +377,7 @@ impl EngineState {
         }
 
         // --- Regenerate noise (throttled to ~30 Hz for animated fog) ----------
-        let fog_animating =
-            self.params.fog_enabled && self.params.fog_anim_speed > 0.0;
+        let fog_animating = self.params.fog_enabled && self.params.fog_anim_speed > 0.0;
         let regen_due = now.duration_since(self.last_noise_regen) >= NOISE_REGEN_INTERVAL;
 
         if self.noise_dirty || (fog_animating && regen_due) {

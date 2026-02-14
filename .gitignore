@@ -4,7 +4,7 @@ target/
 **/*.rs.bk
 
 # WASM build artifacts
-/pkg/
+/web/pkg/
 *.wasm
 
 # Node
@@ -53,4 +53,6 @@ web/dist-ssr
 web/*.local
 
 # Personal Configs
-.github
+.github/agents
+.github/instructions
+.github/logs

@@ -19,8 +19,12 @@ use winit::window::{Window, WindowAttributes, WindowId};
 use crate::noise;
 use crate::scene::SceneParams;
 
-const NOISE_WIDTH: u32 = 512;
-const NOISE_HEIGHT: u32 = 512;
+/// Internal simulation resolution — decoupled from the actual window/canvas
+/// size so the CPU noise pass stays cheap regardless of display DPI.
+/// Low resolution (256×256) creates a retro/pixel art aesthetic when upscaled
+/// with nearest-neighbor filtering, and drastically reduces CPU workload.
+const SIM_WIDTH: u32 = 64;
+const SIM_HEIGHT: u32 = 64;
 
 /// Minimum interval between CPU noise regenerations for animated fog (~30 Hz).
 const NOISE_REGEN_INTERVAL: Duration = Duration::from_millis(33);
@@ -133,6 +137,15 @@ impl ApplicationHandler for App {
                     self.state = Some(s);
                 }
             });
+            // The canvas may have been laid out / resized while the async GPU
+            // init was in flight. Immediately sync the surface configuration
+            // so the first frame renders at the correct resolution.
+            if let Some(state) = &mut self.state {
+                let size = state.window.inner_size();
+                state.resize(size);
+                // Force an immediate redraw to prevent waiting for user interaction
+                state.window.request_redraw();
+            }
         }
 
         let Some(state) = &mut self.state else {
@@ -169,6 +182,15 @@ impl ApplicationHandler for App {
                 state.window.request_redraw();
             }
             _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        // On web, the event loop may sleep if no events occur. Continuously
+        // request redraws to keep the animation loop running (especially for
+        // animated fog). On native, VSync naturally paces the loop.
+        if let Some(state) = &self.state {
+            state.window.request_redraw();
         }
     }
 }
@@ -260,8 +282,8 @@ impl EngineState {
         let noise_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Noise Texture"),
             size: wgpu::Extent3d {
-                width: NOISE_WIDTH,
-                height: NOISE_HEIGHT,
+                width: SIM_WIDTH,
+                height: SIM_HEIGHT,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -273,11 +295,13 @@ impl EngineState {
         });
 
         let texture_view = noise_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // Nearest-neighbor filtering preserves hard pixel edges for retro aesthetic
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
 
@@ -322,7 +346,7 @@ impl EngineState {
         // --- Shader + pipeline ------------------------------------------------
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Fullscreen Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/shader.wgsl").into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -375,8 +399,8 @@ impl EngineState {
 
         // --- Initial noise bake -----------------------------------------------
         let params = SceneParams::default();
-        let mut pixel_buffer = vec![0u8; (NOISE_WIDTH * NOISE_HEIGHT * 4) as usize];
-        noise::render_scene_to_buffer(&mut pixel_buffer, NOISE_WIDTH, NOISE_HEIGHT, &params);
+        let mut pixel_buffer = vec![0u8; (SIM_WIDTH * SIM_HEIGHT * 4) as usize];
+        noise::render_scene_to_buffer(&mut pixel_buffer, SIM_WIDTH, SIM_HEIGHT, &params);
         upload_noise_texture(&queue, &noise_texture, &pixel_buffer);
 
         Self {
@@ -451,8 +475,8 @@ impl EngineState {
         if self.noise_dirty || (fog_animating && regen_due) {
             noise::render_scene_to_buffer(
                 &mut self.pixel_buffer,
-                NOISE_WIDTH,
-                NOISE_HEIGHT,
+                SIM_WIDTH,
+                SIM_HEIGHT,
                 &self.params,
             );
             upload_noise_texture(&self.queue, &self.noise_texture, &self.pixel_buffer);
@@ -466,9 +490,13 @@ impl EngineState {
             .egui_ctx
             .tessellate(full_output.shapes, full_output.pixels_per_point);
 
+        // Use the same pixels_per_point that egui used for layout so the
+        // tessellated primitives and the GPU viewport agree. On WASM,
+        // `window.scale_factor()` can momentarily diverge from what
+        // egui_winit fed into the context, causing invisible UI.
         let screen = ScreenDescriptor {
             size_in_pixels: [self.config.width, self.config.height],
-            pixels_per_point: self.window.scale_factor() as f32,
+            pixels_per_point: full_output.pixels_per_point,
         };
 
         for (id, delta) in &full_output.textures_delta.set {
@@ -567,12 +595,12 @@ fn upload_noise_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, data: &[u8
         data,
         wgpu::TexelCopyBufferLayout {
             offset: 0,
-            bytes_per_row: Some(4 * NOISE_WIDTH),
-            rows_per_image: Some(NOISE_HEIGHT),
+            bytes_per_row: Some(4 * SIM_WIDTH),
+            rows_per_image: Some(SIM_HEIGHT),
         },
         wgpu::Extent3d {
-            width: NOISE_WIDTH,
-            height: NOISE_HEIGHT,
+            width: SIM_WIDTH,
+            height: SIM_HEIGHT,
             depth_or_array_layers: 1,
         },
     );

@@ -154,8 +154,8 @@
         {
             "label": "Build All (Native + WASM + Web)",
             "dependsOn": [
-                "🔧 Build Native",
-                "📦 Build WASM"
+                "Build Native",
+                "Build WASM"
             ],
             "dependsOrder": "parallel",
             "problemMatcher": [],

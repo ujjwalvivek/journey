@@ -22,6 +22,9 @@ pub struct JourneyGame {
     level: Level,
     camera_x: f32,
     scene: GameScene,
+    initial_screen_height: f32,
+    screen_initialized: bool,
+    init_frame_count: u32,
 }
 
 impl GameApp for JourneyGame {
@@ -33,8 +36,8 @@ impl GameApp for JourneyGame {
         let animations = KnightAnimations::create_all();
         let anim_state = anim::AnimationState::new(animations, "Idle");
 
-        //? Spawn the player with a starting position and animation state
-        let start_pos = engine::Vec2::new(100.0, 1000.0);
+        //? Spawn the player on top of the first platform, responsive to screen height
+        let start_pos = Self::spawn_position(ctx.screen_height);
         let player = Player::new(start_pos, anim_state);
 
         Self {
@@ -45,10 +48,29 @@ impl GameApp for JourneyGame {
                 show_collision_box: false,
                 ..Default::default()
             },
+            initial_screen_height: ctx.screen_height,
+            screen_initialized: false,
+            init_frame_count: 0,
         }
     }
 
     fn update(&mut self, ctx: &mut Context) {
+        //? On WASM, canvas dimensions may be incorrect during initialization.
+        //? Detect when screen height stabilizes and reposition player if needed.
+        if !self.screen_initialized {
+            self.init_frame_count += 1;
+
+            if (ctx.screen_height - self.initial_screen_height).abs() > 10.0 {
+                let correct_spawn = Self::spawn_position(ctx.screen_height);
+                self.player.position = correct_spawn;
+                self.camera_x = correct_spawn.x - ctx.screen_width / 2.0;
+                self.initial_screen_height = ctx.screen_height;
+                self.screen_initialized = true;
+            } else if self.init_frame_count > 10 {
+                //? Mark as initialized after 10 frames even if no resize detected
+                self.screen_initialized = true;
+            }
+        }
         //? Update level (handles screen resize)
         self.level
             .update(self.player.position.x, ctx.screen_width, ctx.screen_height);
@@ -59,9 +81,9 @@ impl GameApp for JourneyGame {
         //? Update player with physics and input
         self.player.update(ctx, &platform_aabbs);
 
-        //? Respawn: If player falls below -600, reset to start
+        //? Respawn: If player falls below screen + margin, reset to spawn position
         if self.player.position.y > ctx.screen_height + 500.0 {
-            self.player.position = engine::Vec2::new(100.0, 1000.0);
+            self.player.position = Self::spawn_position(ctx.screen_height);
             self.player.velocity = engine::Vec2::ZERO;
         }
 
@@ -147,6 +169,18 @@ impl GameApp for JourneyGame {
 
     fn ui(&mut self, ctx: &egui::Context, params: &mut engine::scene::SceneParams) {
         crate::scene::show_ui(ctx, &mut self.scene, params);
+    }
+}
+
+//? JourneyGame helper methods
+impl JourneyGame {
+    //? Calculate spawn position based on screen height.
+    fn spawn_position(screen_height: f32) -> engine::Vec2 {
+        use crate::config::PLAYER_HEIGHT;
+        let floor_y = screen_height - 50.0;
+        let platform_height = 100.0;
+        let platform_top = floor_y - platform_height / 2.0;
+        engine::Vec2::new(200.0, platform_top - PLAYER_HEIGHT / 2.0 - 5.0)
     }
 }
 

@@ -18,7 +18,9 @@ use web_time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::window::{Fullscreen, Window, WindowAttributes, WindowId};
+#[cfg(not(target_arch = "wasm32"))]
+use winit::window::Fullscreen;
+use winit::window::{Window, WindowAttributes, WindowId};
 
 //? Internal simulation resolution decoupled from the actual window/canvas size, CPU noise pass stays cheap.
 //* Upscaled with nearest-neighbor filtering for a retro pixelated look.
@@ -85,11 +87,15 @@ impl<G: GameApp> ApplicationHandler for App<G> {
         }
         self.init_started = true;
 
+        #[cfg(not(target_arch = "wasm32"))]
         let attrs = WindowAttributes::default()
             .with_title("Journey Engine")
             .with_resizable(false)
             .with_visible(false)
             .with_fullscreen(Some(Fullscreen::Borderless(None)));
+
+        #[cfg(target_arch = "wasm32")]
+        let attrs = WindowAttributes::default().with_title("Journey Engine");
 
         let window = Arc::new(
             event_loop
@@ -140,6 +146,9 @@ impl<G: GameApp> ApplicationHandler for App<G> {
                 let _ = style.set_property("display", "block");
                 let _ = canvas.set_attribute("tabindex", "0");
                 let _ = canvas.focus();
+
+                //? Explicitly size the canvas backing buffer to physical pixels.
+                sync_canvas_backing_buffer(&canvas);
             }
 
             let win = window.clone();
@@ -214,6 +223,16 @@ impl<G: GameApp> ApplicationHandler for App<G> {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 state.resize(size);
+                //? Ensure egui state is synced with new dimensions/DPI
+                let scale_factor = state.window.scale_factor() as f32;
+                state.egui_ctx.set_pixels_per_point(scale_factor);
+                state.window.request_redraw();
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                //? DPI changed (e.g., dragged to another monitor or DevTools device switch)
+                state.egui_ctx.set_pixels_per_point(scale_factor as f32);
+                let size = state.window.inner_size();
+                state.resize(size);
                 state.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
@@ -239,7 +258,42 @@ impl<G: GameApp> ApplicationHandler for App<G> {
     //? request redraws to keep the animation loop running (especially for
     //? animated fog). On native, VSync naturally paces the loop.
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        if let Some(state) = &self.state {
+        if let Some(state) = &mut self.state {
+            //? On WASM, poll the canvas for size/DPR changes every frame.
+            //? Catches iframe resizes and monitor DPR changes that winit may miss.
+            #[cfg(target_arch = "wasm32")]
+            {
+                use winit::platform::web::WindowExtWebSys;
+                if let Some(canvas) = state.window.canvas() {
+                    if let Some(web_window) = web_sys::window() {
+                        let dpr = web_window.device_pixel_ratio();
+                        let css_w = canvas.client_width() as f64;
+                        let css_h = canvas.client_height() as f64;
+                        let phys_w = (css_w * dpr).round() as u32;
+                        let phys_h = (css_h * dpr).round() as u32;
+
+                        //? Skip resize if dimensions are too small (portrait warning showing)
+                        const MIN_WIDTH: u32 = 320;
+                        const MIN_HEIGHT: u32 = 240;
+
+                        let dpr_changed = (dpr - state.scale_factor).abs() > 0.01;
+                        let size_changed =
+                            phys_w != state.config.width || phys_h != state.config.height;
+
+                        if phys_w >= MIN_WIDTH
+                            && phys_h >= MIN_HEIGHT
+                            && (size_changed || dpr_changed)
+                        {
+                            canvas.set_width(phys_w);
+                            canvas.set_height(phys_h);
+                            state.resize(winit::dpi::PhysicalSize::new(phys_w, phys_h));
+                            state.egui_ctx.set_pixels_per_point(dpr as f32);
+                            state.window.request_redraw();
+                        }
+                    }
+                }
+            }
+
             state.window.request_redraw();
         }
     }
@@ -270,6 +324,8 @@ struct EngineState<G: GameApp> {
     last_frame: Instant,
     last_noise_regen: Instant,
     noise_dirty: bool,
+    scale_factor: f64,
+    render_format: wgpu::TextureFormat,
 }
 
 //? Core engine state initialization:
@@ -312,20 +368,25 @@ impl<G: GameApp> EngineState<G> {
         //? Configure surface with the adapter's preferred format and initial size.
         //? This also implicitly creates the swap chain.
         let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
-            .iter()
-            .find(|f| f.is_srgb())
-            .copied()
-            .unwrap_or(caps.formats[0]);
+        let surface_format = caps.formats[0];
+        let render_format = match surface_format {
+            wgpu::TextureFormat::Bgra8Unorm => wgpu::TextureFormat::Bgra8UnormSrgb,
+            wgpu::TextureFormat::Rgba8Unorm => wgpu::TextureFormat::Rgba8UnormSrgb,
+            other => other,
+        };
+        let view_formats = if surface_format == render_format {
+            vec![]
+        } else {
+            vec![render_format]
+        };
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
+            format: surface_format,
             width: size.width.max(1),
             height: size.height.max(1),
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: caps.alpha_modes[0],
-            view_formats: vec![],
+            view_formats,
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
@@ -423,7 +484,7 @@ impl<G: GameApp> EngineState<G> {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format,
+                    format: render_format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -441,6 +502,12 @@ impl<G: GameApp> EngineState<G> {
 
         //? Initialize egui context, state, and renderer.
         let egui_ctx = egui::Context::default();
+
+        let mut visuals = egui::Visuals::dark();
+        visuals.window_fill = egui::Color32::from_gray(40);
+        visuals.window_shadow = egui::Shadow::NONE;
+        egui_ctx.set_visuals(visuals);
+
         let egui_state = egui_winit::State::new(
             egui_ctx.clone(),
             egui::ViewportId::ROOT,
@@ -449,13 +516,18 @@ impl<G: GameApp> EngineState<G> {
             None,
             None,
         );
-        let egui_renderer =
-            egui_wgpu::Renderer::new(&device, format, egui_wgpu::RendererOptions::default());
+        let egui_renderer = egui_wgpu::Renderer::new(
+            &device,
+            render_format,
+            egui_wgpu::RendererOptions::default(),
+        );
 
         //? Create the camera and sprite renderer for the game.
-        //* Here, the sprite renderer needs to be initialized.
-        let camera = Camera::new(size.width as f32, size.height as f32);
-        let sprite_renderer = SpriteRenderer::new(&device, &queue, format, &camera);
+        let scale_factor = window.scale_factor();
+        let (game_w, game_h) = game_dimensions(size, scale_factor);
+
+        let camera = Camera::new(game_w, game_h);
+        let sprite_renderer = SpriteRenderer::new(&device, &queue, render_format, &camera);
 
         //? Load game textures from embedded bytes and create bind groups for them.
         let idle_bytes = include_bytes!("../../game/assets/player/Knight(Idle).png");
@@ -503,7 +575,7 @@ impl<G: GameApp> EngineState<G> {
         }
 
         //? Create the game instance, passing in a mutable reference to the context.
-        let mut context = Context::new(size.width as f32, size.height as f32);
+        let mut context = Context::new(game_w, game_h);
         let game = G::init(&mut context);
 
         //? Initial noise bake to populate the texture before the first frame renders.
@@ -536,21 +608,36 @@ impl<G: GameApp> EngineState<G> {
             last_frame: Instant::now(),
             last_noise_regen: Instant::now(),
             noise_dirty: false,
+            scale_factor,
+            render_format,
         }
     }
 
     //? Resize handler: reconfigure the surface and update camera and sprite renderer with new dimensions.
+    //? Surface config always uses physical pixels. Camera and context use game_dimensions
+    //? (physical on native, logical/CSS on WASM) for a consistent coordinate system.
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        //? Prevent rendering at invalid dimensions (portrait/too narrow)
+        //? This avoids corruption when the CSS warning overlay is showing
+        const MIN_WIDTH: u32 = 320;
+        const MIN_HEIGHT: u32 = 240;
+
+        if new_size.width < MIN_WIDTH || new_size.height < MIN_HEIGHT {
+            return;
+        }
+
         if new_size.width > 0 && new_size.height > 0 {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
-            self.camera
-                .resize(new_size.width as f32, new_size.height as f32);
+
+            self.scale_factor = self.window.scale_factor();
+            let (game_w, game_h) = game_dimensions(new_size, self.scale_factor);
+
+            self.camera.resize(game_w, game_h);
             self.sprite_renderer
                 .update_camera(&self.queue, &self.camera);
-            self.context
-                .resize(new_size.width as f32, new_size.height as f32);
+            self.context.resize(game_w, game_h);
         }
     }
 
@@ -670,9 +757,10 @@ impl<G: GameApp> EngineState<G> {
 
         //? Get the current frame's swap chain texture and create a view for rendering.
         let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.render_format),
+            ..Default::default()
+        });
 
         //? Pass 1: full-screen quad with noise texture
         {
@@ -751,13 +839,45 @@ impl<G: GameApp> EngineState<G> {
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
-        //? Log the frame time for debugging and performance monitoring.
-        log::info!("Frame time: {:.2} ms", raw_dt * 1000.0);
         Ok(())
     }
 }
 
 //? Additional Helpers
+
+//? Convert physical pixel size to game-logic dimensions.
+fn game_dimensions(physical: winit::dpi::PhysicalSize<u32>, scale_factor: f64) -> (f32, f32) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = scale_factor;
+        (physical.width as f32, physical.height as f32)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let s = scale_factor as f32;
+        (physical.width as f32 / s, physical.height as f32 / s)
+    }
+}
+
+//? On WASM, set the canvas backing buffer (width/height attributes) to match
+//? the CSS layout size × devicePixelRatio.
+#[cfg(target_arch = "wasm32")]
+fn sync_canvas_backing_buffer(canvas: &web_sys::HtmlCanvasElement) {
+    let dpr = web_sys::window()
+        .map(|w| w.device_pixel_ratio())
+        .unwrap_or(1.0);
+
+    let css_w = canvas.client_width() as f64;
+    let css_h = canvas.client_height() as f64;
+    let phys_w = (css_w * dpr).round() as u32;
+    let phys_h = (css_h * dpr).round() as u32;
+
+    if phys_w > 0 && phys_h > 0 {
+        canvas.set_width(phys_w);
+        canvas.set_height(phys_h);
+    }
+}
+
 fn upload_noise_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, data: &[u8]) {
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {

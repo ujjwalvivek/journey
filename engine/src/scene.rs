@@ -32,8 +32,14 @@ impl Default for SceneParams {
 
 //? UI-only helper: Render an egui window that allows editing `SceneParams`.
 pub fn show_ui(ctx: &egui::Context, params: &mut SceneParams) {
+    let content_rect = ctx.available_rect();
+    let window_width = 280.0f32.min(content_rect.width() * 0.9);
+
     egui::Window::new("Engine Debug Controls ")
         .default_open(false)
+        .default_width(window_width)
+        .default_pos([10.0, 50.0])
+        .constrain(true)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Background:");
@@ -51,10 +57,7 @@ pub fn show_ui(ctx: &egui::Context, params: &mut SceneParams) {
                 ui.add(egui::Slider::new(&mut params.seed, 0..=999).text("Seed"));
                 ui.add(egui::Slider::new(&mut params.fog_density, 0.5..=10.0).text("Density"));
                 ui.add(egui::Slider::new(&mut params.fog_opacity, 0.0..=1.0).text("Opacity"));
-                ui.add(
-                    egui::Slider::new(&mut params.fog_anim_speed, 0.0..=2.0)
-                        .text("Animation Speed"),
-                );
+                ui.add(egui::Slider::new(&mut params.fog_anim_speed, 0.0..=2.0).text("Anim Speed"));
             }
         });
 }

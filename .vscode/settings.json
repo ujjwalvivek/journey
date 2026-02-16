@@ -28,7 +28,8 @@
         "**/target": true,
         "**/node_modules": true,
         "**/dist": true,
-        "**/.vscode": false
+        "**/.vscode": false,
+        "**/*.lock": true
     },
     "files.watcherExclude": {
         "**/target/**": true,

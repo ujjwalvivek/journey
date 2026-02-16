@@ -1,17 +1,18 @@
-//! Procedural noise generation and scene rendering.
-//!
-//! Contains the legacy gradient + Perlin fog pipeline, preserved from the
-//! original WASM prototype. [`render_scene`] remains exported via `wasm-bindgen`
-//! for the web frontend. [`render_scene_to_buffer`] provides a zero-allocation
-//! variant for the native render loop.
-
+/**--------------------------------------------------------------------------------
+*!  Procedural noise generation and scene rendering.
+*?  Contains the legacy Perlin fog pipeline, preserved from the
+*?  original WASM prototype. [`render_scene`] remains exported via `wasm-bindgen`
+*?  for the web frontend. [`render_scene_to_buffer`] provides a zero-allocation
+*?  variant for the native render loop.
+*--------------------------------------------------------------------------------**/
+use crate::scene::SceneParams;
 use noise::{NoiseFn, Perlin};
 
+//? Make the wasm-bindgen helpers available for WASM builds.
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
-use crate::scene::SceneParams;
-
+//? Convert a hex color string input to an RGB tuple.
 pub fn hex_to_rgb(hex: &str) -> (u8, u8, u8) {
     let hex = hex.trim_start_matches('#');
     if hex.len() < 6 {
@@ -23,11 +24,16 @@ pub fn hex_to_rgb(hex: &str) -> (u8, u8, u8) {
     (r, g, b)
 }
 
+//? Smoothstep function for smooth transitions in fog density.
 pub fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 
+//? Draw a vertical gradient from `top_rgb` to `bot_rgb` into the RGBA buffer.
+//* Currently used to fill the background with a solid color by passing the same
+//* color for both endpoints. Flexibility preserved for potential future gradient
+//* backgrounds without changing the API.
 pub fn draw_gradient(
     buffer: &mut [u8],
     width: u32,
@@ -50,6 +56,9 @@ pub fn draw_gradient(
     }
 }
 
+//? Apply Perlin noise-based fog to the buffer. Modifies the buffer in place.
+//* Currently used fro single layer clouds by applying a vertical mask so fog
+//* only appears in the top half of the screen.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_fog(
     buffer: &mut [u8],
@@ -79,19 +88,24 @@ pub fn apply_fog(
             ]);
             let fog = (base * 0.6 + detail * 0.4 + 1.0) * 0.5;
             let fog_mask = smoothstep(0.2, 0.8, fog as f32);
-
+            let half_h = (height as f32) * 0.5;
+            let vertical_t = ((half_h - y as f32) / half_h).clamp(0.0, 1.0);
+            let vertical_mask = smoothstep(0.0, 1.0, vertical_t);
+            let final_mask = fog_mask * vertical_mask;
             let idx = ((y * width + x) * 4) as usize;
+
             for c in 0..3 {
                 let orig = buffer[idx + c] as f32;
                 let fogc = [fog_rgb.0, fog_rgb.1, fog_rgb.2][c] as f32;
-                buffer[idx + c] = (orig * (1.0 - fog_mask * opacity) + fogc * fog_mask * opacity)
+                buffer[idx + c] = (orig * (1.0 - final_mask * opacity)
+                    + fogc * final_mask * opacity)
                     .clamp(0.0, 255.0) as u8;
             }
         }
     }
 }
 
-/// Legacy WASM-exported scene renderer. Allocates a new buffer each call.
+//? Legacy WASM-exported scene renderer. Allocates a new buffer each call.
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub fn render_scene(
@@ -99,8 +113,7 @@ pub fn render_scene(
     height: u32,
     time: f32,
     quality: u32,
-    top_hex: &str,
-    bot_hex: &str,
+    background_hex: &str,
     fog_on: bool,
     fog_density: f32,
     fog_opacity: f32,
@@ -113,9 +126,8 @@ pub fn render_scene(
     let h = height / q;
     let mut buffer = vec![0u8; (w * h * 4) as usize];
 
-    let top_rgb = hex_to_rgb(top_hex);
-    let bot_rgb = hex_to_rgb(bot_hex);
-    draw_gradient(&mut buffer, w, h, top_rgb, bot_rgb);
+    let background_rgb = hex_to_rgb(background_hex);
+    draw_gradient(&mut buffer, w, h, background_rgb, background_rgb);
 
     if fog_on {
         apply_fog(
@@ -133,18 +145,10 @@ pub fn render_scene(
     buffer
 }
 
-/// WASM greeting for connectivity testing.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub fn greet() {
-    web_sys::console::log_1(&"Hello from Rust WASM!".into());
-}
-
-/// Render the scene into a pre-allocated buffer (zero-allocation hot path).
+//? Render the scene into a pre-allocated buffer (zero-allocation hot path).
 pub fn render_scene_to_buffer(buffer: &mut [u8], width: u32, height: u32, params: &SceneParams) {
-    let top_rgb = color_f32_to_u8(params.top_color);
-    let bot_rgb = color_f32_to_u8(params.bottom_color);
-    draw_gradient(buffer, width, height, top_rgb, bot_rgb);
+    let bg_rgb = color_f32_to_u8(params.background_color);
+    draw_gradient(buffer, width, height, bg_rgb, bg_rgb);
 
     if params.fog_enabled {
         let fog_rgb = color_f32_to_u8(params.fog_color);
@@ -162,35 +166,41 @@ pub fn render_scene_to_buffer(buffer: &mut [u8], width: u32, height: u32, params
     }
 }
 
+//? Helper to convert [f32; 3] color in 0.0..=1.0 range to (u8, u8, u8) in 0..=255 range.
 fn color_f32_to_u8(c: [f32; 3]) -> (u8, u8, u8) {
     (
-        (c[0] * 255.0).clamp(0.0, 255.0) as u8,
-        (c[1] * 255.0).clamp(0.0, 255.0) as u8,
-        (c[2] * 255.0).clamp(0.0, 255.0) as u8,
+        (c[0] * 255.0).clamp(0.0, 255.0).round() as u8,
+        (c[1] * 255.0).clamp(0.0, 255.0).round() as u8,
+        (c[2] * 255.0).clamp(0.0, 255.0).round() as u8,
     )
 }
 
+//? Unit tests for noise generation and scene rendering logic.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    //* Tests for hex color parsing
     #[test]
     fn test_hex_to_rgb() {
-        let result = hex_to_rgb("#87ceeb");
-        assert_eq!(result, (135, 206, 235));
+        let result = hex_to_rgb("#FFD300");
+        assert_eq!(result, (255, 211, 0));
     }
 
+    //* Tests for smoothstep function edge cases
     #[test]
     fn test_smoothstep_edges() {
         assert!((smoothstep(0.0, 1.0, 0.0) - 0.0).abs() < f32::EPSILON);
         assert!((smoothstep(0.0, 1.0, 1.0) - 1.0).abs() < f32::EPSILON);
     }
 
+    //* Tests for gradient drawing (solid color case)
     #[test]
     fn test_color_f32_to_u8() {
-        assert_eq!(color_f32_to_u8([1.0, 0.5, 0.0]), (255, 127, 0));
+        assert_eq!(color_f32_to_u8([1.0, 0.827, 0.0]), (255, 211, 0));
     }
 
+    //* Tests for rendering a scene to a buffer and checking dimensions and basic content
     #[test]
     fn test_render_scene_to_buffer_dimensions() {
         let params = SceneParams::default();
@@ -201,5 +211,54 @@ mod tests {
             buf.iter().any(|&b| b != 0),
             "Buffer should contain non-zero pixels"
         );
+    }
+
+    //* Tests for fog application logic by checking that the top half of the buffer is modified
+    //* while the bottom half remains unchanged. Uses a high fog density and opacity to ensure visible changes.
+    #[test]
+    fn test_fog_top_half_only() {
+        let params = SceneParams {
+            background_color: [1.0, 1.0, 1.0],
+            fog_color: [0.0, 0.0, 0.0],
+            fog_enabled: true,
+            fog_density: 20.0,
+            fog_opacity: 1.0,
+            fog_anim_speed: 0.0,
+            seed: 0,
+            time: 0.0,
+        };
+
+        let (w, h) = (8u32, 8u32);
+        let mut buf = vec![0u8; (w * h * 4) as usize];
+        render_scene_to_buffer(&mut buf, w, h, &params);
+
+        let (bg_r, bg_g, bg_b) = color_f32_to_u8(params.background_color);
+        let half = (h / 2) as usize;
+
+        // bottom half must remain equal to background
+        for y in half..(h as usize) {
+            for x in 0..(w as usize) {
+                let idx = (((y as u32) * w + x as u32) * 4) as usize;
+                assert_eq!(buf[idx], bg_r);
+                assert_eq!(buf[idx + 1], bg_g);
+                assert_eq!(buf[idx + 2], bg_b);
+            }
+        }
+
+        // top half should contain at least one non-background pixel (cloud)
+        let mut top_changed = false;
+        for y in 0..half {
+            for x in 0..(w as usize) {
+                let idx = (((y as u32) * w + x as u32) * 4) as usize;
+                if buf[idx] != bg_r || buf[idx + 1] != bg_g || buf[idx + 2] != bg_b {
+                    top_changed = true;
+                    break;
+                }
+            }
+            if top_changed {
+                break;
+            }
+        }
+        assert!(top_changed, "Top half should contain fog pixels");
     }
 }

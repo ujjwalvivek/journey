@@ -1,11 +1,13 @@
-// Full-screen triangle shader for displaying the CPU-generated noise texture.
-// Uses 3 vertices (no vertex buffer) to cover clip space with a single triangle.
-
+/**--------------------------------------------------------------------------------
+*!  Full-screen triangle shader for displaying the CPU-generated noise texture.
+*?  Uses 3 vertices (no vertex buffer) to cover clip space with a single triangle.
+*--------------------------------------------------------------------------------**/
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
 };
 
+//? Simple vertex shader that generates a full-screen triangle and passes UVs to the fragment shader.
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
     var pos = array<vec2<f32>, 3>(
@@ -26,6 +28,7 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
 @group(0) @binding(0) var t_noise: texture_2d<f32>;
 @group(0) @binding(1) var s_noise: sampler;
 
+//? Simple fragment shader that samples the noise texture using the UVs from the vertex shader.
 @fragment
 fn fs_main(frag: VertexOutput) -> @location(0) vec4<f32> {
     return textureSample(t_noise, s_noise, frag.uv);

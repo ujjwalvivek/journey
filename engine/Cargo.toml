@@ -15,9 +15,12 @@ egui = "0.33"
 egui-wgpu = "0.33"
 bytemuck = { version = "1", features = ["derive"] }
 web-time = "1"
+glam = "0.29"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 # Native-only
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+gilrs = "0.11"
 egui-winit = "0.33"
 pollster = "0.4"
 env_logger = "0.11"

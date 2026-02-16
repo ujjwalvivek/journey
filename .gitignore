@@ -56,3 +56,6 @@ web/*.local
 .github/agents
 .github/instructions
 .github/logs
+
+# Game Assets
+game/assets/player/sourcecode/

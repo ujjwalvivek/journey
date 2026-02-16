@@ -9,8 +9,7 @@ export default defineConfig({
     ],
     server: {
         fs: {
-            // Allow serving the WASM pkg from the root workspace
-            allow: ['..']
+            allow: ['..'] // Allow serving the WASM pkg from the root workspace
         }
     }
 });

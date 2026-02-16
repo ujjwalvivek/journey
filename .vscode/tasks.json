@@ -73,11 +73,11 @@
             "command": "wasm-pack",
             "args": [
                 "build",
-                "engine",
+                "game",
                 "--target",
                 "web",
                 "--out-dir",
-                "../web/pkg"
+                "../game/pkg"
             ],
             "problemMatcher": [
                 "$rustc"

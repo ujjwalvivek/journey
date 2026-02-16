@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build:wasm": "wasm-pack build ../engine --target web --out-dir ../web/pkg",
+    "build:wasm": "wasm-pack build ../game --target web --out-dir pkg",
     "dev": "npm run build:wasm && vite",
     "dev:quick": "vite",
     "build": "npm run build:wasm && tsc && vite build",

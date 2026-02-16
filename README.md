@@ -1,6 +1,8 @@
-# Development Workflow
+# Journey Engine - Handcrafted in Rust
 
-`Awaiting updates... Read more in docd/journey.md`
+![Yayy](./docs/media/v0.2.0.gif)
+
+`Awaiting updates... Read roadmap in docs/journey.md`
 
 ## Native Development
 

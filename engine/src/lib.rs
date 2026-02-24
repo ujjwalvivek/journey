@@ -52,7 +52,13 @@ pub trait GameApp: 'static {
     //* Render the game. Called every frame after `update`.
     //? Use `ctx.draw_sprite()` to submit draw calls. Sprites are rendered after the background but before the UI overlay.
     fn render(&mut self, ctx: &mut Context);
-    fn ui(&mut self, _ctx: &egui::Context, _scene_params: &mut crate::scene::SceneParams) {}
+    fn ui(
+        &mut self,
+        _egui_ctx: &egui::Context,
+        _ctx: &mut Context,
+        _scene_params: &mut crate::scene::SceneParams,
+    ) {
+    }
 }
 
 fn init_logging() {

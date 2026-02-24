@@ -41,6 +41,7 @@ pub enum Key {
     Left,
     Right,
     F12,
+    Escape,
 }
 
 impl Key {
@@ -58,6 +59,7 @@ impl Key {
             KeyCode::ArrowLeft => Some(Key::Left),
             KeyCode::ArrowRight => Some(Key::Right),
             KeyCode::F12 => Some(Key::F12),
+            KeyCode::Escape => Some(Key::Escape),
             _ => None,
         }
     }
@@ -154,8 +156,8 @@ struct BufferedInput {
 //? Input state tracking keyboard, mouse, and gamepad.
 //* bool updated by winit event handlers.
 pub struct InputState {
-    keys: [bool; 12],
-    keys_prev: [bool; 12],
+    keys: [bool; 13],
+    keys_prev: [bool; 13],
     actions: [bool; 9],
     actions_prev: [bool; 9],
     mouse_buttons: [bool; 3],
@@ -174,8 +176,8 @@ pub struct InputState {
 impl InputState {
     pub fn new() -> Self {
         Self {
-            keys: [false; 12],
-            keys_prev: [false; 12],
+            keys: [false; 13],
+            keys_prev: [false; 13],
             actions: [false; 9],
             actions_prev: [false; 9],
             mouse_buttons: [false; 3],

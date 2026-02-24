@@ -57,8 +57,6 @@ impl Entity {
     }
 }
 
-//-- System functions --------------------------------------------------------
-
 //? Resolves collisions on all axes using MTV (minimum translation vector).
 pub fn fixed_update_physics(
     entity: &mut Entity,

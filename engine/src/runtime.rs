@@ -262,6 +262,10 @@ impl<G: GameApp> ApplicationHandler for App<G> {
             }
             _ => {}
         }
+
+        if state.context.request_exit {
+            event_loop.exit();
+        }
     }
 
     //? On web, the event loop may sleep if no events occur. Continuously
@@ -694,9 +698,9 @@ impl<G: GameApp> EngineState<G> {
         //? Build the egui UI and detect discrete changes to scene parameters (excluding time).
         let mut params = self.params.clone();
         let raw_input = self.egui_state.take_egui_input(&self.window);
-        let full_output = self.egui_ctx.run(raw_input, |ctx| {
-            crate::scene::show_ui(ctx, &mut params);
-            self.game.ui(ctx, &mut params);
+        let ctx = &mut self.context;
+        let full_output = self.egui_ctx.run(raw_input, |egui_ctx| {
+            self.game.ui(egui_ctx, ctx, &mut params);
         });
 
         let ui_changed = params.background_color != self.params.background_color

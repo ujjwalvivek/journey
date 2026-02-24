@@ -26,6 +26,7 @@ pub struct Context {
     pub interpolation_alpha: f32,
     pub freeze_frames: u16,
     pub pending_shakes: Vec<(f32, f32)>,
+    pub request_exit: bool,
 
     //* pub(crate) - public only within the current crate
     //* Vec<T> - growable, heap-allocated array
@@ -59,6 +60,7 @@ impl Context {
             freeze_frames: 0,
             pending_shakes: Vec::new(),
             pending_textures: Vec::new(),
+            request_exit: false,
         }
     }
 

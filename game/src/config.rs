@@ -72,7 +72,6 @@ pub const PARRY_BOX_WIDTH: f32 = 16.0;
 pub const PARRY_BOX_HEIGHT: f32 = 32.0;
 pub const PARRY_BOX_FRONT_OFFSET: f32 = 4.0; //* Center shifted 4px toward face
 
-//-- Enemy Constants -------------------------------------------------------------
 pub const ENEMY_WIDTH: f32 = 9.0;
 pub const ENEMY_HEIGHT: f32 = 32.0;
 pub const ENEMY_PATROL_SPEED: f32 = 2.0 * PIXELS_PER_UNIT;

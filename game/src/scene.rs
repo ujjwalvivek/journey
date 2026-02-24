@@ -38,7 +38,8 @@ pub struct DebugUiParams<'a> {
     pub grapple_target: Option<engine::Vec2>,
     pub anim_name: Option<String>,
     pub physics_config: &'a mut PhysicsConfig,
-    pub using_gamepad: bool,
+    pub using_gamepad: bool, //* Preserve this bool for later UI updates INGAME
+    pub show_physics_tuner_in_game: bool,
 }
 
 //? Keeps the game wrapper in sync with engine-owned `SceneParams`.
@@ -63,11 +64,10 @@ pub fn show_ui(p: DebugUiParams<'_>) {
         grapple_target,
         anim_name,
         physics_config,
-        using_gamepad,
+        using_gamepad: _using_gamepad,
+        show_physics_tuner_in_game,
     } = p;
     scene.params = params.clone();
-
-    show_controls_overlay(ctx, using_gamepad);
 
     let content_rect = ctx.available_rect();
     let window_width = 280.0f32.min(content_rect.width() * 0.9);
@@ -170,13 +170,19 @@ pub fn show_ui(p: DebugUiParams<'_>) {
             }
         });
 
-    show_physics_tuner(ctx, physics_config, content_rect);
+    if show_physics_tuner_in_game {
+        show_physics_tuner_window(ctx, physics_config, content_rect);
+    }
 }
 
 //? Standalone egui window for hot-reloading physics parameters.
 //* All values are edited in-place on the shared `PhysicsConfig` so changes
 //* take effect on the very next fixed-update tick, no recompile needed.
-fn show_physics_tuner(ctx: &egui::Context, cfg: &mut PhysicsConfig, content_rect: egui::Rect) {
+pub fn show_physics_tuner_window(
+    ctx: &egui::Context,
+    cfg: &mut PhysicsConfig,
+    content_rect: egui::Rect,
+) {
     let window_width = 300.0f32.min(content_rect.width() * 0.9);
 
     egui::Window::new("Physics Tuning")
@@ -188,147 +194,101 @@ fn show_physics_tuner(ctx: &egui::Context, cfg: &mut PhysicsConfig, content_rect
             egui::ScrollArea::vertical()
                 .max_height(content_rect.height() - 50.0)
                 .show(ui, |ui| {
-                    ui.heading("Gravity");
-                    ui.add(
-                        egui::Slider::new(&mut cfg.gravity, 10.0..=5000.0)
-                            .text("gravity (px/s²)")
-                            .logarithmic(true),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.max_fall_speed, 50.0..=2000.0)
-                            .text("max fall speed"),
-                    );
-
-                    ui.separator();
-                    ui.heading("Movement");
-                    ui.add(
-                        egui::Slider::new(&mut cfg.movement_speed, 50.0..=1200.0)
-                            .text("move speed"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.acceleration, 100.0..=20000.0)
-                            .text("acceleration")
-                            .logarithmic(true),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.ground_decel, 100.0..=20000.0)
-                            .text("ground decel")
-                            .logarithmic(true),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.air_decel, 10.0..=5000.0)
-                            .text("air decel")
-                            .logarithmic(true),
-                    );
-
-                    ui.separator();
-                    ui.heading("Jump");
-                    ui.add(
-                        egui::Slider::new(&mut cfg.jump_power, 100.0..=1500.0).text("jump power"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.jump_end_early_gravity_mod, 1.0..=10.0)
-                            .text("early release gravity"),
-                    );
-                    ui.add(egui::Slider::new(&mut cfg.coyote_ticks, 0..=20).text("coyote (ticks)"));
-                    ui.add(
-                        egui::Slider::new(&mut cfg.jump_buffer_ticks, 0..=20)
-                            .text("jump buffer (ticks)"),
-                    );
-
-                    ui.separator();
-                    ui.heading("Dash");
-                    ui.add(
-                        egui::Slider::new(&mut cfg.dash_speed, 100.0..=3000.0)
-                            .text("dash speed")
-                            .logarithmic(true),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.dash_duration_frames, 1..=30)
-                            .text("dash duration (ticks)"),
-                    );
-
-                    ui.separator();
-                    ui.heading("Wall");
-                    ui.add(
-                        egui::Slider::new(&mut cfg.wall_slide_speed, 5.0..=200.0)
-                            .text("slide speed"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.wall_jump_power_x, 50.0..=800.0)
-                            .text("jump power X"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.wall_jump_power_y, 100.0..=1000.0)
-                            .text("jump power Y"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.wall_grab_timeout_ticks, 5..=120)
-                            .text("grab timeout (ticks)"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.wall_jump_lock_ticks, 5..=60)
-                            .text("jump lock (ticks)"),
-                    );
-
-                    ui.separator();
-                    ui.heading("Grapple");
-                    ui.add(
-                        egui::Slider::new(&mut cfg.grapple_pull_speed, 50.0..=2000.0)
-                            .text("pull speed"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.grapple_slingshot_force, 50.0..=2000.0)
-                            .text("slingshot force"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.grapple_slingshot_ticks, 1..=30)
-                            .text("slingshot coast (ticks)"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.grapple_bounce_velocity_x, 100.0..=1500.0)
-                            .text("bounce vel X"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.grapple_bounce_velocity_y, -1500.0..=0.0)
-                            .text("bounce vel Y"),
-                    );
-
-                    ui.separator();
-                    ui.heading("Knockback");
-                    ui.add(
-                        egui::Slider::new(&mut cfg.knockback, 100.0..=1500.0)
-                            .text("knockback force"),
-                    );
-
-                    ui.separator();
-                    ui.heading("Enemy");
-                    ui.add(
-                        egui::Slider::new(&mut cfg.enemy_patrol_speed, 5.0..=200.0)
-                            .text("patrol speed"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.enemy_aggro_range, 20.0..=400.0)
-                            .text("aggro range"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut cfg.enemy_melee_range, 5.0..=100.0)
-                            .text("melee range"),
-                    );
-
-                    ui.separator();
-                    if ui.button("Reset to Defaults").clicked() {
-                        *cfg = PhysicsConfig::default();
-                    }
+                    physics_tuner_ui(ui, cfg);
                 });
         });
 }
 
-//? Uses a non-interactable `Area` so it never intercepts mouse input.
-fn show_controls_overlay(ctx: &egui::Context, using_gamepad: bool) {
-    const MARGIN: f32 = 10.0;
+pub fn physics_tuner_ui(ui: &mut egui::Ui, cfg: &mut PhysicsConfig) {
+    ui.heading("Gravity");
+    ui.add(
+        egui::Slider::new(&mut cfg.gravity, 10.0..=5000.0)
+            .text("gravity (px/s²)")
+            .logarithmic(true),
+    );
+    ui.add(egui::Slider::new(&mut cfg.max_fall_speed, 50.0..=2000.0).text("max fall speed"));
 
-    let bg = egui::Color32::from_rgba_unmultiplied(12, 12, 12, 255);
+    ui.separator();
+    ui.heading("Movement");
+    ui.add(egui::Slider::new(&mut cfg.movement_speed, 50.0..=1200.0).text("move speed"));
+    ui.add(
+        egui::Slider::new(&mut cfg.acceleration, 100.0..=20000.0)
+            .text("acceleration")
+            .logarithmic(true),
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.ground_decel, 100.0..=20000.0)
+            .text("ground decel")
+            .logarithmic(true),
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.air_decel, 10.0..=5000.0)
+            .text("air decel")
+            .logarithmic(true),
+    );
+
+    ui.separator();
+    ui.heading("Jump");
+    ui.add(egui::Slider::new(&mut cfg.jump_power, 100.0..=1500.0).text("jump power"));
+    ui.add(
+        egui::Slider::new(&mut cfg.jump_end_early_gravity_mod, 1.0..=10.0)
+            .text("early release gravity"),
+    );
+    ui.add(egui::Slider::new(&mut cfg.coyote_ticks, 0..=20).text("coyote (ticks)"));
+    ui.add(egui::Slider::new(&mut cfg.jump_buffer_ticks, 0..=20).text("jump buffer (ticks)"));
+
+    ui.separator();
+    ui.heading("Dash");
+    ui.add(
+        egui::Slider::new(&mut cfg.dash_speed, 100.0..=3000.0)
+            .text("dash speed")
+            .logarithmic(true),
+    );
+    ui.add(egui::Slider::new(&mut cfg.dash_duration_frames, 1..=30).text("dash duration (ticks)"));
+
+    ui.separator();
+    ui.heading("Wall");
+    ui.add(egui::Slider::new(&mut cfg.wall_slide_speed, 5.0..=200.0).text("slide speed"));
+    ui.add(egui::Slider::new(&mut cfg.wall_jump_power_x, 50.0..=800.0).text("jump power X"));
+    ui.add(egui::Slider::new(&mut cfg.wall_jump_power_y, 100.0..=1000.0).text("jump power Y"));
+    ui.add(
+        egui::Slider::new(&mut cfg.wall_grab_timeout_ticks, 5..=120).text("grab timeout (ticks)"),
+    );
+    ui.add(egui::Slider::new(&mut cfg.wall_jump_lock_ticks, 5..=60).text("jump lock (ticks)"));
+
+    ui.separator();
+    ui.heading("Grapple");
+    ui.add(egui::Slider::new(&mut cfg.grapple_pull_speed, 50.0..=2000.0).text("pull speed"));
+    ui.add(
+        egui::Slider::new(&mut cfg.grapple_slingshot_force, 50.0..=2000.0).text("slingshot force"),
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.grapple_slingshot_ticks, 1..=30).text("slingshot coast (ticks)"),
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.grapple_bounce_velocity_x, 100.0..=1500.0).text("bounce vel X"),
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.grapple_bounce_velocity_y, -1500.0..=0.0).text("bounce vel Y"),
+    );
+
+    ui.separator();
+    ui.heading("Knockback");
+    ui.add(egui::Slider::new(&mut cfg.knockback, 100.0..=1500.0).text("knockback force"));
+
+    ui.separator();
+    ui.heading("Enemy");
+    ui.add(egui::Slider::new(&mut cfg.enemy_patrol_speed, 5.0..=200.0).text("patrol speed"));
+    ui.add(egui::Slider::new(&mut cfg.enemy_aggro_range, 20.0..=400.0).text("aggro range"));
+    ui.add(egui::Slider::new(&mut cfg.enemy_melee_range, 5.0..=100.0).text("melee range"));
+
+    ui.separator();
+    if ui.button("Reset to Defaults").clicked() {
+        *cfg = PhysicsConfig::default();
+    }
+}
+
+pub fn controls_ui(ui: &mut egui::Ui, using_gamepad: bool) {
     let dim = egui::Color32::from_rgba_unmultiplied(180, 180, 180, 200);
     let val = egui::Color32::from_rgba_unmultiplied(230, 230, 230, 255);
 
@@ -354,40 +314,27 @@ fn show_controls_overlay(ctx: &egui::Context, using_gamepad: bool) {
         ]
     };
 
-    let frame = egui::Frame::new()
-        .fill(bg)
-        .corner_radius(egui::CornerRadius::same(4))
-        .inner_margin(egui::Margin::symmetric(10, 8));
+    ui.set_min_width(148.0);
 
-    egui::Area::new(egui::Id::new("controls_overlay"))
-        .movable(false)
-        .interactable(false)
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-MARGIN, MARGIN))
-        .show(ctx, |ui| {
-            frame.show(ui, |ui| {
-                ui.set_min_width(148.0);
+    let header = if using_gamepad {
+        "Controller"
+    } else {
+        "Keyboard & Mouse"
+    };
+    ui.colored_label(
+        egui::Color32::from_rgba_unmultiplied(200, 200, 200, 200),
+        egui::RichText::new(header).size(16.0).strong(),
+    );
+    ui.add_space(4.0);
 
-                let header = if using_gamepad {
-                    "Controller"
-                } else {
-                    "Keyboard & Mouse"
-                };
-                ui.colored_label(
-                    egui::Color32::from_rgba_unmultiplied(200, 200, 200, 200),
-                    egui::RichText::new(header).size(16.0).strong(),
-                );
-                ui.add_space(4.0);
-
-                egui::Grid::new("controls_grid")
-                    .num_columns(2)
-                    .spacing([12.0, 3.0])
-                    .show(ui, |ui| {
-                        for &(action, key) in controls {
-                            ui.colored_label(dim, egui::RichText::new(action).size(16.0));
-                            ui.colored_label(val, egui::RichText::new(key).size(16.0).strong());
-                            ui.end_row();
-                        }
-                    });
-            });
+    egui::Grid::new("controls_grid")
+        .num_columns(2)
+        .spacing([12.0, 3.0])
+        .show(ui, |ui| {
+            for &(action, key) in controls {
+                ui.colored_label(dim, egui::RichText::new(action).size(16.0));
+                ui.colored_label(val, egui::RichText::new(key).size(16.0).strong());
+                ui.end_row();
+            }
         });
 }

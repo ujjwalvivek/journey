@@ -20,6 +20,7 @@ use level_editor::LevelEditor;
 use player::Player;
 use projectile::ProjectilePool;
 mod scene;
+mod start_sequence;
 use scene::GameScene;
 
 struct VfxBurst {
@@ -29,19 +30,53 @@ struct VfxBurst {
     color: [f32; 4],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MenuReturnState {
+    StartMenu,
+    Paused,
+    InGame,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum OptionsTab {
+    #[default]
+    Graphics,
+    Physics,
+    Controls,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum GameState {
+    Splash {
+        timer: f32,
+    },
+    StartMenu {
+        animation_progress: f32,
+    },
+    Options {
+        return_state: MenuReturnState,
+        tab: OptionsTab,
+    },
+    LevelEditor {
+        return_state: MenuReturnState,
+    },
+    InGame,
+    Paused,
+}
+
 //? The main game state
 //* @param player: The player character with position, velocity, and animation state
 //* @param level: The current level, which handles procedural platform generation
 //* @param camera_x: The horizontal offset for the camera to create a smooth follow effect
 pub struct JourneyGame {
-    player: Player,
+    pub(crate) player: Player,
     enemies: Vec<Enemy>,
     projectiles: ProjectilePool,
-    level: Level,
+    pub(crate) level: Level,
     camera_x: f32,
     camera_y: f32,
     scene: GameScene,
-    physics_config: PhysicsConfig,
+    pub(crate) physics_config: PhysicsConfig,
     initial_screen_height: f32,
     screen_initialized: bool,
     init_frame_count: u32,
@@ -50,9 +85,11 @@ pub struct JourneyGame {
     pending_tick_rate: u32,
     pending_target_fps: u32,
     death_respawn_timer: u32, //* 0 = Godmode, >0 = counting down to respawn
-    level_editor: LevelEditor,
+    pub(crate) level_editor: LevelEditor,
     vfx_bursts: Vec<VfxBurst>,
     using_gamepad: bool,
+    pub state: GameState,
+    pub show_physics_tuner_in_game: bool,
 }
 
 impl JourneyGame {
@@ -131,12 +168,23 @@ impl GameApp for JourneyGame {
             level_editor: LevelEditor::new(),
             vfx_bursts: Vec::new(),
             using_gamepad: false,
+            state: GameState::Splash { timer: 3.0 },
+            show_physics_tuner_in_game: false,
         }
     }
 
     fn fixed_update(&mut self, ctx: &mut Context, fixed_time: &FixedTime) {
+        //? State Machine Handling
+        match self.state {
+            GameState::Splash { .. }
+            | GameState::StartMenu { .. }
+            | GameState::Options { .. }
+            | GameState::Paused => return,
+            GameState::LevelEditor { .. } | GameState::InGame => {}
+        }
+
         //? Skip all game simulation while Level Editor is active
-        if self.level_editor.active {
+        if matches!(self.state, GameState::LevelEditor { .. }) {
             return;
         }
 
@@ -379,6 +427,115 @@ impl GameApp for JourneyGame {
     }
 
     fn update(&mut self, ctx: &mut Context) {
+        //? Global Input Handling (Escape, F12)
+        if ctx.input.is_key_just_pressed(engine::Key::Escape) {
+            match self.state {
+                GameState::InGame => {
+                    self.state = GameState::Paused;
+                    return;
+                }
+                GameState::Paused => {
+                    self.state = GameState::InGame;
+                    return;
+                }
+                GameState::LevelEditor { return_state } => {
+                    self.respawn_after_level_edit();
+                    self.level_editor.active = false;
+                    self.state = match return_state {
+                        MenuReturnState::StartMenu => GameState::StartMenu {
+                            animation_progress: 1.0,
+                        },
+                        MenuReturnState::Paused => GameState::Paused,
+                        MenuReturnState::InGame => GameState::InGame,
+                    };
+                    return;
+                }
+                GameState::Options { return_state, .. } => {
+                    self.state = match return_state {
+                        MenuReturnState::StartMenu => GameState::StartMenu {
+                            animation_progress: 1.0,
+                        },
+                        MenuReturnState::Paused => GameState::Paused,
+                        MenuReturnState::InGame => GameState::InGame,
+                    };
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        if ctx.input.is_key_just_pressed(engine::Key::F12) {
+            match self.state {
+                GameState::InGame => {
+                    self.state = GameState::LevelEditor {
+                        return_state: MenuReturnState::InGame,
+                    };
+                    let start_pos = self.player.position();
+                    let level_floor_y = self.level.death_y_threshold - 100.0;
+                    self.level_editor.toggle(
+                        start_pos.x,
+                        level_floor_y,
+                        ctx.screen_width,
+                        ctx.screen_height,
+                    );
+                    return;
+                }
+                GameState::StartMenu { .. } => {
+                    self.state = GameState::LevelEditor {
+                        return_state: MenuReturnState::StartMenu,
+                    };
+                    let start_pos = self.player.position();
+                    let level_floor_y = self.level.death_y_threshold - 100.0;
+                    self.level_editor.toggle(
+                        start_pos.x,
+                        level_floor_y,
+                        ctx.screen_width,
+                        ctx.screen_height,
+                    );
+                    return;
+                }
+                GameState::LevelEditor { return_state } => {
+                    self.respawn_after_level_edit();
+                    self.level_editor.active = false;
+                    self.state = match return_state {
+                        MenuReturnState::StartMenu => GameState::StartMenu {
+                            animation_progress: 1.0,
+                        },
+                        MenuReturnState::Paused => GameState::Paused,
+                        MenuReturnState::InGame => GameState::InGame,
+                    };
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        //? State Machine Handling
+        match self.state {
+            GameState::Splash { ref mut timer } => {
+                *timer -= ctx.delta_time;
+                if *timer <= 0.0 {
+                    self.state = GameState::StartMenu {
+                        animation_progress: 0.0,
+                    };
+                }
+                return;
+            }
+            GameState::StartMenu {
+                ref mut animation_progress,
+            } => {
+                if *animation_progress < 1.0 {
+                    *animation_progress += ctx.delta_time * 1.5;
+                    if *animation_progress > 1.0 {
+                        *animation_progress = 1.0;
+                    }
+                }
+                return;
+            }
+            GameState::Options { .. } | GameState::Paused => return,
+            GameState::LevelEditor { .. } | GameState::InGame => {}
+        }
+
         //? track whether last input came from gamepad or keyboard/mouse
         if ctx.input.any_gamepad() {
             self.using_gamepad = true;
@@ -416,26 +573,8 @@ impl GameApp for JourneyGame {
             }
         }
 
-        //? F12 to toggle Level Editor (detect edge transition)
-        if ctx.input.is_key_just_pressed(engine::Key::F12) {
-            let start_pos = self.player.position();
-            let level_floor_y = self.level.death_y_threshold - 100.0;
-            self.level_editor.toggle(
-                start_pos.x,
-                level_floor_y,
-                ctx.screen_width,
-                ctx.screen_height,
-            );
-            //? The level text buffer might contain changes, if closed prematurely on a level
-            //? that were "Saved & Reloaded". The editor handles updating the Level struct
-            //? but enemies, players need a rebind to the new platforms.
-            if !self.level_editor.active {
-                self.respawn_after_level_edit();
-            }
-        }
-
         //? Skip camera/visual updates if editing
-        if self.level_editor.active {
+        if matches!(self.state, GameState::LevelEditor { .. }) {
             if self.level_editor.visual_mode {
                 ctx.camera_offset_x = self.level_editor.camera_x.round();
                 ctx.camera_offset_y = self.level_editor.camera_y.round();
@@ -498,6 +637,10 @@ impl GameApp for JourneyGame {
 
     //? Render the level and player
     fn render(&mut self, ctx: &mut Context) {
+        if let GameState::Splash { .. } = self.state {
+            return;
+        }
+
         for platform in &self.level.platforms {
             let pos = platform.aabb.top_left();
             let color = level::Level::platform_color(platform.platform_type);
@@ -710,7 +853,7 @@ impl GameApp for JourneyGame {
         }
 
         //? Debug overlay: color-coded boxes for enemies
-        if self.scene.show_collision_box {
+        if self.scene.show_collision_box && self.state == GameState::InGame {
             for enemy in &self.enemies {
                 if enemy.is_alive() {
                     enemy::render_debug_boxes(ctx, &enemy.entity);
@@ -719,44 +862,84 @@ impl GameApp for JourneyGame {
         }
     }
 
-    fn ui(&mut self, ctx: &egui::Context, params: &mut engine::scene::SceneParams) {
-        if !self.level_editor.active {
-            crate::scene::show_ui(crate::scene::DebugUiParams {
-                ctx,
-                scene: &mut self.scene,
-                params,
-                fps: self.cached_fps,
-                frame_time_ms: self.cached_frame_time_ms,
-                fixed_tick_rate: &mut self.pending_tick_rate,
-                target_fps: &mut self.pending_target_fps,
-                combat: &self.player.entity.combat,
-                input_buffer: &self.player.input_buffer,
-                enemies: &self.enemies,
-                player_state: self.player.state,
-                wall_left: self.player.entity.touching_wall_left,
-                wall_right: self.player.entity.touching_wall_right,
-                dash_cooldown: self.player.dash_cooldown_timer,
-                has_air_dashed: self.player.has_air_dashed(),
-                wall_grab_timer: self.player.wall_grab_timer(),
-                grapple_target: self.player.grapple_target,
-                anim_name: self
-                    .player
-                    .anim_state
-                    .current_animation_name()
-                    .map(String::from),
-                physics_config: &mut self.physics_config,
-                using_gamepad: self.using_gamepad,
-            });
+    fn ui(
+        &mut self,
+        ctx: &egui::Context,
+        engine_ctx: &mut Context,
+        params: &mut engine::scene::SceneParams,
+    ) {
+        match self.state {
+            GameState::Splash { timer } => {
+                self.show_splash_screen(ctx, timer);
+            }
+            GameState::StartMenu { animation_progress } => {
+                self.show_start_menu(ctx, engine_ctx, animation_progress);
+            }
+            GameState::Options {
+                return_state,
+                ref tab,
+            } => {
+                let current_tab = tab.clone();
+                self.show_options_menu(ctx, params, return_state, current_tab);
+            }
+            GameState::Paused => {
+                self.show_paused_menu(ctx, engine_ctx);
+            }
+            GameState::LevelEditor { return_state } => {
+                self.level_editor.show_ui(
+                    ctx,
+                    params,
+                    &mut self.level,
+                    self.initial_screen_height,
+                    self.initial_screen_height,
+                );
+                //? Add an exit button for the level editor in its state
+                egui::Area::new(egui::Id::new("level_editor_exit"))
+                    .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 20.0))
+                    .show(ctx, |ui| {
+                        if ui.button("Exit Level Editor").clicked() {
+                            self.respawn_after_level_edit();
+                            self.level_editor.active = false;
+                            self.state = match return_state {
+                                MenuReturnState::StartMenu => GameState::StartMenu {
+                                    animation_progress: 1.0,
+                                },
+                                MenuReturnState::Paused => GameState::Paused,
+                                MenuReturnState::InGame => GameState::InGame,
+                            };
+                        }
+                    });
+            }
+            GameState::InGame => {
+                crate::scene::show_ui(crate::scene::DebugUiParams {
+                    ctx,
+                    scene: &mut self.scene,
+                    params,
+                    fps: self.cached_fps,
+                    frame_time_ms: self.cached_frame_time_ms,
+                    fixed_tick_rate: &mut self.pending_tick_rate,
+                    target_fps: &mut self.pending_target_fps,
+                    combat: &self.player.entity.combat,
+                    input_buffer: &self.player.input_buffer,
+                    enemies: &self.enemies,
+                    player_state: self.player.state,
+                    wall_left: self.player.entity.touching_wall_left,
+                    wall_right: self.player.entity.touching_wall_right,
+                    dash_cooldown: self.player.dash_cooldown_timer,
+                    has_air_dashed: self.player.has_air_dashed(),
+                    wall_grab_timer: self.player.wall_grab_timer(),
+                    grapple_target: self.player.grapple_target,
+                    anim_name: self
+                        .player
+                        .anim_state
+                        .current_animation_name()
+                        .map(String::from),
+                    physics_config: &mut self.physics_config,
+                    using_gamepad: self.using_gamepad,
+                    show_physics_tuner_in_game: self.show_physics_tuner_in_game,
+                });
+            }
         }
-
-        //? Show Level Editor overlay
-        self.level_editor.show_ui(
-            ctx,
-            params,
-            &mut self.level,
-            self.initial_screen_height,
-            self.initial_screen_height,
-        );
     }
 }
 

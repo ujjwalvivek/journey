@@ -1,36 +1,20 @@
 /**---------------------------------------------------------------------------
-*!  Animation system for sprite strip animations.
-*?  Each animation references a sprite sheet (AssetKey) and calculates
-*?  frame rects dynamically based on frame count.
+*!  Grid-based spritesheet animation system.
+*?  Each animation references a range of frames within a single spritesheet
+*?  grid and calculates frame rects dynamically.
 *---------------------------------------------------------------------------**/
 use engine::Rect;
 
-//? Which sprite sheet to use for an animation
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum AssetKey {
-    Idle,
-    Run,
-    Jump,
-    Fall,
-    Attack,
-    Block,
-    Roll,
-}
-
-//? A single animation (references a sprite strip texture).
 #[derive(Clone)]
 pub struct Animation {
     pub name: String,
-    pub asset_key: AssetKey,
-    pub start_frame: usize,  //* Starting frame index in the strip
-    pub frame_count: usize,  //* Total frames in this animation
-    pub frame_duration: f32, //* Duration per frame in seconds
+    pub start_frame: usize,
+    pub frame_count: usize,
+    pub frame_duration: f32,
     pub looping: bool,
 }
 
-//? Create a simple animation that uses all frames in a sprite strip.
 impl Animation {
-    //? Convert game `Animation` (contains `AssetKey`) into `AnimationDef` used by the runtime.
     fn to_def(&self) -> engine::animation::AnimationDef {
         engine::animation::AnimationDef::new(
             &self.name,
@@ -43,26 +27,22 @@ impl Animation {
 
     pub fn new(
         name: impl Into<String>,
-        asset_key: AssetKey,
+        start_frame: usize,
         frame_count: usize,
         frame_duration: f32,
         looping: bool,
     ) -> Self {
         Self {
             name: name.into(),
-            asset_key,
-            start_frame: 0,
+            start_frame,
             frame_count,
             frame_duration,
             looping,
         }
     }
 
-    //? Create an animation that uses a range of frames within a sprite strip.
-    //* Used for attacks where multiple animations share one sprite sheet.
     pub fn new_with_range(
         name: impl Into<String>,
-        asset_key: AssetKey,
         start_frame: usize,
         end_frame: usize,
         frame_duration: f32,
@@ -70,7 +50,6 @@ impl Animation {
     ) -> Self {
         Self {
             name: name.into(),
-            asset_key,
             start_frame,
             frame_count: (end_frame - start_frame) + 1,
             frame_duration,
@@ -78,12 +57,22 @@ impl Animation {
         }
     }
 
-    //? Calculate the source rect for a given frame index
-    //* Assumes horizontal sprite strip (all frames in one row) !IMPORTANT
-    pub fn get_frame_rect(&self, frame_idx: usize, frame_width: f32, frame_height: f32) -> Rect {
+    pub fn get_frame_rect(
+        &self,
+        frame_idx: usize,
+        frame_width: f32,
+        frame_height: f32,
+        sheet_cols: usize,
+    ) -> Rect {
         let actual_frame = self.start_frame + frame_idx;
-        let x = actual_frame as f32 * frame_width;
-        Rect::new(x, 0.0, frame_width, frame_height)
+        let col = actual_frame % sheet_cols;
+        let row = actual_frame / sheet_cols;
+        Rect::new(
+            col as f32 * frame_width,
+            row as f32 * frame_height,
+            frame_width,
+            frame_height,
+        )
     }
 }
 
@@ -106,12 +95,15 @@ impl AnimationState {
         self.inner.update(dt);
     }
 
-    //? Get the current frame rectangle and asset key (keeps previous API).
-    pub fn current_frame(&self, frame_width: f32, frame_height: f32) -> Option<(AssetKey, Rect)> {
+    pub fn current_frame(
+        &self,
+        frame_width: f32,
+        frame_height: f32,
+        sheet_cols: usize,
+    ) -> Option<Rect> {
         let (def, frame_idx) = self.inner.current()?;
         let anim = self.animations.iter().find(|a| a.name == def.name)?;
-        let rect = anim.get_frame_rect(frame_idx, frame_width, frame_height);
-        Some((anim.asset_key, rect))
+        Some(anim.get_frame_rect(frame_idx, frame_width, frame_height, sheet_cols))
     }
 
     //? Animation control methods (play new animation, check if finished, etc.)

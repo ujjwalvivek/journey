@@ -3,15 +3,31 @@
 *--------------------------------------------------------------------------------**/
 pub mod anim;
 pub mod assets;
+pub mod combat;
 pub mod config;
+pub mod enemy;
+pub mod entity;
 pub mod level;
+pub mod level_editor;
 pub mod player;
-use assets::KnightAnimations;
-use engine::{Context, GameApp};
+pub mod projectile;
+use assets::PlayerAnimations;
+use config::PhysicsConfig;
+use enemy::Enemy;
+use engine::{Context, FixedTime, GameApp};
 use level::Level;
+use level_editor::LevelEditor;
 use player::Player;
+use projectile::ProjectilePool;
 mod scene;
 use scene::GameScene;
+
+struct VfxBurst {
+    position: engine::Vec2,
+    timer: u16,
+    max_timer: u16,
+    color: [f32; 4],
+}
 
 //? The main game state
 //* @param player: The player character with position, velocity, and animation state
@@ -19,86 +35,465 @@ use scene::GameScene;
 //* @param camera_x: The horizontal offset for the camera to create a smooth follow effect
 pub struct JourneyGame {
     player: Player,
+    enemies: Vec<Enemy>,
+    projectiles: ProjectilePool,
     level: Level,
     camera_x: f32,
+    camera_y: f32,
     scene: GameScene,
+    physics_config: PhysicsConfig,
     initial_screen_height: f32,
     screen_initialized: bool,
     init_frame_count: u32,
+    cached_fps: f32,
+    cached_frame_time_ms: f32,
+    pending_tick_rate: u32,
+    pending_target_fps: u32,
+    death_respawn_timer: u32, //* 0 = Godmode, >0 = counting down to respawn
+    level_editor: LevelEditor,
+    vfx_bursts: Vec<VfxBurst>,
+    using_gamepad: bool,
+}
+
+impl JourneyGame {
+    fn respawn_after_level_edit(&mut self) {
+        self.player.entity.position = self.level.player_spawn;
+        self.player.entity.velocity = engine::Vec2::ZERO;
+        self.camera_x = (self.level.player_spawn.x - self.initial_screen_height / 2.0).max(0.0);
+        self.camera_y = (self.level.player_spawn.y - self.initial_screen_height / 2.0).max(0.0);
+        let all_platform_aabbs: Vec<_> = self.level.platforms.iter().map(|p| p.aabb).collect();
+        let mut enemies: Vec<Enemy> = self
+            .level
+            .enemy_spawns
+            .iter()
+            .map(|&(pos, etype)| Enemy::new(pos, etype))
+            .collect();
+        for enemy in &mut enemies {
+            enemy.bind_to_platform(&all_platform_aabbs);
+        }
+        self.enemies = enemies;
+    }
 }
 
 impl GameApp for JourneyGame {
     fn init(ctx: &mut Context) -> Self {
+        let _tex_player = ctx.load_texture(
+            include_bytes!("../assets/player/player.png"),
+            "Player Spritesheet",
+        );
+
         //? Create level with infinite generation
         let level = Level::new(ctx.screen_width, ctx.screen_height);
 
         //? Initialize player with animations
-        let animations = KnightAnimations::create_all();
+        let animations = PlayerAnimations::create_all();
         let anim_state = anim::AnimationState::new(animations, "Idle");
 
-        //? Spawn the player on top of the first platform, responsive to screen height
-        let start_pos = Self::spawn_position(ctx.screen_height);
+        //? Spawn player at the ASCII-defined @ tile.
+        let start_pos = level.player_spawn;
         let player = Player::new(start_pos, anim_state);
+
+        //? Spawn enemies from level data and bind each to its platform.
+        let all_platform_aabbs: Vec<_> = level.platforms.iter().map(|p| p.aabb).collect();
+        let mut enemies: Vec<Enemy> = level
+            .enemy_spawns
+            .iter()
+            .map(|&(pos, etype)| Enemy::new(pos, etype))
+            .collect();
+        for enemy in &mut enemies {
+            enemy.bind_to_platform(&all_platform_aabbs);
+        }
+
+        //? Derive initial camera position directly from spawn so there is no lerp on frame 1.
+        let init_camera_x = (start_pos.x - ctx.screen_width / 2.0).max(0.0);
+        let init_camera_y = (start_pos.y - ctx.screen_height / 2.0).max(0.0);
 
         Self {
             player,
+            enemies,
+            projectiles: ProjectilePool::new(),
             level,
-            camera_x: start_pos.x - ctx.screen_width / 2.0,
+            camera_x: init_camera_x,
+            camera_y: init_camera_y,
             scene: GameScene {
                 show_collision_box: false,
                 ..Default::default()
             },
+            physics_config: PhysicsConfig::default(),
             initial_screen_height: ctx.screen_height,
             screen_initialized: false,
             init_frame_count: 0,
+            cached_fps: 0.0,
+            cached_frame_time_ms: 0.0,
+            pending_tick_rate: ctx.fixed_tick_rate,
+            pending_target_fps: ctx.target_fps,
+            death_respawn_timer: 0,
+            level_editor: LevelEditor::new(),
+            vfx_bursts: Vec::new(),
+            using_gamepad: false,
         }
     }
 
+    fn fixed_update(&mut self, ctx: &mut Context, fixed_time: &FixedTime) {
+        //? Skip all game simulation while Level Editor is active
+        if self.level_editor.active {
+            return;
+        }
+
+        //? Split platforms into solid and one-way for proper collision handling
+        let solid_aabbs = self.level.solid_aabbs();
+        let one_way_aabbs = self.level.one_way_aabbs();
+        let wall_aabbs = self.level.wall_aabbs();
+        let all_aabbs: Vec<_> = self.level.platforms.iter().map(|p| p.aabb).collect();
+
+        //? Update grapple target: nearest node OR staggered enemy.
+        //? Staggered enemies ALWAYS take priority over static nodes (∞ range).
+        //? Skip during GrapplePull/Slingshot, the target is locked when the pull begins.
+        if !matches!(
+            self.player.state,
+            crate::player::PlayerState::GrapplePull | crate::player::PlayerState::GrappleSlingshot
+        ) {
+            let player_pos = self.player.position();
+            let range = config::GRAPPLE_DETECT_RANGE;
+
+            let dynamic_target = self
+                .enemies
+                .iter()
+                .filter(|e| e.is_staggered())
+                .map(|e| (e.entity.position, (e.entity.position - player_pos).length()))
+                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(pos, _)| pos);
+
+            if let Some(d) = dynamic_target {
+                self.player.grapple_target = Some(d);
+                self.player.grapple_is_enemy_target = true;
+            } else {
+                self.player.grapple_target =
+                    self.level.find_nearest_grapple_node(player_pos, range);
+                self.player.grapple_is_enemy_target = false;
+            }
+        }
+
+        self.player.fixed_update(
+            ctx.delta_time,
+            fixed_time.tick,
+            &solid_aabbs,
+            &one_way_aabbs,
+            &wall_aabbs,
+            &self.physics_config,
+        );
+
+        //? An enter_death() here starts the normal death → respawn timer pipeline.
+        if !self.player.is_dead && self.player.position().y > self.level.death_y_threshold {
+            self.player.enter_death();
+            self.death_respawn_timer = 60;
+        }
+
+        //? Respawn player and reset all enemies + projectiles
+        if self.player.is_dead {
+            if self.death_respawn_timer > 0 {
+                self.death_respawn_timer -= 1;
+            } else {
+                self.player.respawn(self.level.player_spawn);
+                let all_platform_aabbs: Vec<_> =
+                    self.level.platforms.iter().map(|p| p.aabb).collect();
+                self.enemies = self
+                    .level
+                    .enemy_spawns
+                    .iter()
+                    .map(|&(pos, etype)| Enemy::new(pos, etype))
+                    .collect();
+                for enemy in &mut self.enemies {
+                    enemy.bind_to_platform(&all_platform_aabbs);
+                }
+                self.projectiles = ProjectilePool::new();
+            }
+            return;
+        }
+
+        //? Grapple arrival at enemy: execute or bounce
+        if self.player.grapple_arrived_at_enemy {
+            self.player.grapple_arrived_at_enemy = false;
+            let player_pos = self.player.position();
+
+            //? Find the staggered enemy at the arrival position
+            let enemy_idx = self
+                .enemies
+                .iter()
+                .position(|e| e.is_staggered() && (e.entity.position - player_pos).length() < 24.0);
+
+            //? Check if attack was buffered during the grapple pull
+            let attack_buffered = self
+                .player
+                .input_buffer
+                .has_attack(self.player.current_tick);
+
+            if let Some(idx) = enemy_idx {
+                if attack_buffered {
+                    //? EXECUTE: attack anim → enemy dies → neon burst → Fall
+                    let kill_pos = self.enemies[idx].entity.position;
+                    let accent = self.enemies[idx].config.accent_color;
+                    self.enemies[idx].kill();
+                    self.player.entity.combat = crate::combat::CombatState::default();
+                    entity::despawn_hitbox(&mut self.player.entity);
+                    self.player.grapple_target = None;
+                    self.player.grapple_is_enemy_target = false;
+                    self.player.entity.velocity = self.player.grapple_launch_dir * 80.0;
+                    self.player.state = crate::player::PlayerState::Fall;
+                    self.player.anim_state.play("Fall");
+                    self.player.enter_hitstop(config::HITSTOP_KILL_TICKS);
+                    ctx.trigger_freeze(8);
+                    ctx.trigger_shake(6.0, 0.2);
+                    //? Larger neon burst for grapple execute
+                    self.vfx_bursts.push(VfxBurst {
+                        position: kill_pos,
+                        timer: 18,
+                        max_timer: 18,
+                        color: accent,
+                    });
+                } else {
+                    //? BOUNCE: player bounces off the enemy like a collider
+                    self.player.entity.combat = crate::combat::CombatState::default();
+                    entity::despawn_hitbox(&mut self.player.entity);
+                    self.player.grapple_target = None;
+                    self.player.grapple_is_enemy_target = false;
+                    let bounce_dir = if self.player.grapple_launch_dir.x >= 0.0 {
+                        -1.0
+                    } else {
+                        1.0
+                    };
+                    self.player.entity.velocity = engine::Vec2::new(
+                        bounce_dir * self.physics_config.grapple_bounce_velocity_x,
+                        self.physics_config.grapple_bounce_velocity_y,
+                    );
+                    self.player.state = crate::player::PlayerState::Fall;
+                    self.player.anim_state.play("Fall");
+                }
+            } else {
+                //? Enemy recovered or died,then just fall
+                self.player.entity.combat = crate::combat::CombatState::default();
+                entity::despawn_hitbox(&mut self.player.entity);
+                self.player.grapple_target = None;
+                self.player.grapple_is_enemy_target = false;
+                self.player.state = crate::player::PlayerState::Fall;
+                self.player.anim_state.play("Fall");
+            }
+        }
+
+        //? Freeze stagger timer for the enemy the player is grappling toward
+        for (idx, enemy) in self.enemies.iter_mut().enumerate() {
+            if !enemy.is_alive() {
+                enemy.death_flash_timer = enemy.death_flash_timer.saturating_sub(1);
+                continue;
+            }
+            //? If player is grapple-pulling to this enemy, freeze its stagger
+            let is_grapple_target = self.player.grapple_is_enemy_target
+                && self.player.state == crate::player::PlayerState::GrapplePull
+                && self
+                    .player
+                    .grapple_target
+                    .is_some_and(|t| (t - enemy.entity.position).length() < 4.0);
+            if is_grapple_target {
+                enemy.freeze_stagger();
+            }
+
+            if let Some(shoot) = enemy.fixed_update(
+                ctx.delta_time,
+                fixed_time.tick,
+                self.player.position(),
+                &all_aabbs,
+                &wall_aabbs,
+            ) {
+                self.projectiles
+                    .spawn(shoot.origin, shoot.target, idx, shoot.speed, shoot.color);
+            }
+        }
+
+        //? Hit detection: player → enemies
+        for enemy in &mut self.enemies {
+            if !enemy.is_alive() {
+                continue;
+            }
+            if let Some(event) =
+                entity::check_hit(&self.player.entity, &enemy.entity, &self.player.move_db)
+            {
+                self.player.entity.hit_landed = true;
+                enemy.kill();
+                let recoil_dir = if self.player.facing_right() {
+                    1.0
+                } else {
+                    -1.0
+                };
+                entity::apply_knockback(&mut self.player.entity, event.recoil, recoil_dir);
+                ctx.trigger_freeze(event.freeze_frames);
+                ctx.trigger_shake(event.shake_intensity, 0.15);
+                self.player.enter_hitstop(config::HITSTOP_KILL_TICKS);
+                break;
+            }
+        }
+
+        //? Hit detection: enemies → player (1-hit kill, respects i-frames)
+        if !self.player.entity.combat.invincible {
+            for enemy in &mut self.enemies {
+                if !enemy.is_alive() {
+                    continue;
+                }
+                if let Some(event) =
+                    entity::check_hit(&enemy.entity, &self.player.entity, &enemy.move_db)
+                {
+                    enemy.entity.hit_landed = true;
+                    self.player.enter_death();
+                    self.death_respawn_timer = 60;
+                    let dir = if enemy.entity.facing_right { 1.0 } else { -1.0 };
+                    entity::apply_knockback(&mut self.player.entity, event.knockback, dir);
+                    entity::apply_knockback(&mut enemy.entity, event.recoil, dir);
+                    ctx.trigger_freeze(event.freeze_frames);
+                    ctx.trigger_shake(event.shake_intensity, 0.15);
+                    break;
+                }
+            }
+        }
+
+        self.projectiles.update_all(ctx.delta_time);
+        self.projectiles.collide_walls(&solid_aabbs);
+        if let Some(source_idx) = self.projectiles.check_parry_deflect(&self.player.entity) {
+            if let Some(enemy) = self.enemies.get_mut(source_idx) {
+                enemy.enter_stagger();
+            }
+            ctx.trigger_freeze(5);
+            ctx.trigger_shake(3.0, 0.1);
+        }
+
+        if self.projectiles.check_player_hit(&self.player.entity)
+            && !self.player.entity.combat.invincible
+        {
+            self.player.enter_death();
+            self.death_respawn_timer = 60;
+        }
+
+        //? Tick down VFX burst timers and remove expired ones
+        for burst in &mut self.vfx_bursts {
+            burst.timer = burst.timer.saturating_sub(1);
+        }
+        self.vfx_bursts.retain(|b| b.timer > 0);
+    }
+
     fn update(&mut self, ctx: &mut Context) {
+        //? track whether last input came from gamepad or keyboard/mouse
+        if ctx.input.any_gamepad() {
+            self.using_gamepad = true;
+        } else if ctx.input.any_keyboard_or_mouse() {
+            self.using_gamepad = false;
+        }
+
+        //? Cache FPS counters for UI display, sync tick rate back to engine
+        self.cached_fps = ctx.fps;
+        self.cached_frame_time_ms = ctx.frame_time_ms;
+        ctx.fixed_tick_rate = self.pending_tick_rate;
+        self.player.move_db.set_tick_rate(self.pending_tick_rate);
+        ctx.target_fps = self.pending_target_fps;
+
         //? On WASM, canvas dimensions may be incorrect during initialization.
         //? Detect when screen height stabilizes and reposition player if needed.
         if !self.screen_initialized {
             self.init_frame_count += 1;
 
             if (ctx.screen_height - self.initial_screen_height).abs() > 10.0 {
-                let correct_spawn = Self::spawn_position(ctx.screen_height);
-                self.player.position = correct_spawn;
-                self.camera_x = correct_spawn.x - ctx.screen_width / 2.0;
+                //? Re-anchor the level geometry to the new screen height before reading spawn.
+                self.level.update(
+                    self.player.position().x,
+                    ctx.screen_width,
+                    ctx.screen_height,
+                );
+                let correct_spawn = self.level.player_spawn;
+                self.player.set_position(correct_spawn);
+                self.camera_x = (correct_spawn.x - ctx.screen_width / 2.0).max(0.0);
+                self.camera_y = (correct_spawn.y - ctx.screen_height / 2.0).max(0.0);
                 self.initial_screen_height = ctx.screen_height;
                 self.screen_initialized = true;
             } else if self.init_frame_count > 10 {
-                //? Mark as initialized after 10 frames even if no resize detected
                 self.screen_initialized = true;
             }
         }
-        //? Update level (handles screen resize)
-        self.level
-            .update(self.player.position.x, ctx.screen_width, ctx.screen_height);
 
-        //? Collect platform AABBs for collision
-        let platform_aabbs: Vec<_> = self.level.platforms.iter().map(|p| p.aabb).collect();
-
-        //? Update player with physics and input
-        self.player.update(ctx, &platform_aabbs);
-
-        //? Respawn: If player falls below screen + margin, reset to spawn position
-        if self.player.position.y > ctx.screen_height + 500.0 {
-            self.player.position = Self::spawn_position(ctx.screen_height);
-            self.player.velocity = engine::Vec2::ZERO;
+        //? F12 to toggle Level Editor (detect edge transition)
+        if ctx.input.is_key_just_pressed(engine::Key::F12) {
+            let start_pos = self.player.position();
+            let level_floor_y = self.level.death_y_threshold - 100.0;
+            self.level_editor.toggle(
+                start_pos.x,
+                level_floor_y,
+                ctx.screen_width,
+                ctx.screen_height,
+            );
+            //? The level text buffer might contain changes, if closed prematurely on a level
+            //? that were "Saved & Reloaded". The editor handles updating the Level struct
+            //? but enemies, players need a rebind to the new platforms.
+            if !self.level_editor.active {
+                self.respawn_after_level_edit();
+            }
         }
 
-        //? Clamp player to left edge only
+        //? Skip camera/visual updates if editing
+        if self.level_editor.active {
+            if self.level_editor.visual_mode {
+                ctx.camera_offset_x = self.level_editor.camera_x.round();
+                ctx.camera_offset_y = self.level_editor.camera_y.round();
+            }
+            return;
+        }
+
+        //? Update level (handles screen resize)
+        self.level.update(
+            self.player.position().x,
+            ctx.screen_width,
+            ctx.screen_height,
+        );
+
+        //? Update player (input gathering, visual state, animation, no physics)
+        self.player.update(ctx);
+
+        if !self.player.is_dead && self.player.position().y > self.level.death_y_threshold {
+            self.player.respawn(self.level.player_spawn);
+        }
+
         self.player.clamp_to_bounds(0.0, f32::INFINITY);
 
-        //? Smooth camera follow with lerp (10% blend per frame)
-        let target_camera_x = self.player.position.x - ctx.screen_width / 2.0;
-        self.camera_x += (target_camera_x - self.camera_x) * 0.1;
+        //? Smooth camera follow with frame-rate independent exponential smoothing
+        let alpha = ctx.interpolation_alpha;
+        let interp_pos = self.player.interpolated_position(alpha);
+        let target_camera_x = interp_pos.x - ctx.screen_width / 2.0;
+        let blend = 1.0 - (1.0 - 0.1_f32).powf(ctx.delta_time * 60.0);
+        self.camera_x += (target_camera_x - self.camera_x) * blend;
 
-        //? Clamp camera to prevent showing area left of x=0
+        let top_trigger = self.camera_y + ctx.screen_height * 0.30;
+        let bottom_trigger = self.camera_y + ctx.screen_height * 0.70;
+        let player_y = interp_pos.y;
+        if player_y < top_trigger {
+            //? Player is high up, pan camera upward to keep them in the top third.
+            let target_camera_y = player_y - ctx.screen_height * 0.30;
+            self.camera_y += (target_camera_y - self.camera_y) * blend;
+        } else if player_y > bottom_trigger {
+            //? Player is falling low, pan camera downward.
+            let target_camera_y = player_y - ctx.screen_height * 0.70;
+            self.camera_y += (target_camera_y - self.camera_y) * blend;
+        }
+
+        //? Snap camera to target when close enough to prevent lerp micro-stutter
+        if (target_camera_x - self.camera_x).abs() < 0.5 {
+            self.camera_x = target_camera_x;
+        }
+
+        //? death_y_threshold = lowest platform bottom + 50, so the actual floor
+        //? bottom is threshold - 50.  Camera bottom = camera_y + screen_height.
+        let level_floor_y = self.level.death_y_threshold - 50.0;
+        let camera_y_max = (level_floor_y - ctx.screen_height).max(0.0);
         self.camera_x = self.camera_x.max(0.0);
+        self.camera_y = self.camera_y.max(0.0).min(camera_y_max);
 
-        //? Store camera offset for renderer
-        ctx.camera_offset_x = self.camera_x;
+        //? Pixel-snap camera offsets to prevent sub-pixel jitter in the renderer
+        ctx.camera_offset_x = self.camera_x.round();
+        ctx.camera_offset_y = self.camera_y.round();
     }
 
     //? Render the level and player
@@ -109,78 +504,259 @@ impl GameApp for JourneyGame {
             ctx.draw_rect(pos, platform.aabb.size, color);
         }
 
-        if let Some((asset_key, frame_rect)) = self
-            .player
-            .anim_state
-            .current_frame(assets::FRAME_WIDTH, assets::FRAME_HEIGHT)
-        {
-            let sprite_pos = self.player.draw_position();
-            let sprite_size = self.player.render_size();
-
-            //? Map AssetKey to texture_id (1-7 for game textures)
-            let texture_id = match asset_key {
-                crate::anim::AssetKey::Idle => 1,
-                crate::anim::AssetKey::Run => 2,
-                crate::anim::AssetKey::Jump => 3,
-                crate::anim::AssetKey::Fall => 4,
-                crate::anim::AssetKey::Attack => 5,
-                crate::anim::AssetKey::Block => 6,
-                crate::anim::AssetKey::Roll => 7,
+        //? Render grapple nodes with a glow
+        let pulse = {
+            let t = instant::SystemTime::now()
+                .duration_since(instant::SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f32();
+            (t * 3.0).sin() * 0.5 + 0.5
+        };
+        for node in &self.level.grapple_nodes {
+            let node_size = node.radius * 2.0;
+            let base_alpha = 0.5 + pulse * 0.4;
+            let in_range =
+                (node.position - self.player.position()).length() <= config::GRAPPLE_DETECT_RANGE;
+            let color = if in_range {
+                [0.2, 0.9, 1.0, base_alpha]
+            } else {
+                [0.3, 0.5, 0.6, base_alpha * 0.5]
             };
+            let top_left = node.position - engine::Vec2::new(node.radius, node.radius);
+            ctx.draw_rect(top_left, engine::Vec2::new(node_size, node_size), color);
+        }
+
+        if let Some(frame_rect) = self.player.anim_state.current_frame(
+            assets::FRAME_WIDTH,
+            assets::FRAME_HEIGHT,
+            assets::SHEET_COLS,
+        ) {
+            let sprite_pos = self.player.draw_position(ctx.interpolation_alpha);
+            let sprite_size = self.player.render_size();
+            let flip = !self.player.facing_right();
 
             ctx.draw_sprite_from_sheet(
                 sprite_pos,
                 sprite_size,
                 [1.0, 1.0, 1.0, 1.0],
                 frame_rect,
-                !self.player.facing_right,
-                texture_id,
+                flip,
+                1,
             );
 
-            //? AABB Debug: Player's physics collision box.
+            //? Additive glow overlay during attack animations
+            let is_attack = matches!(
+                self.player.state,
+                player::PlayerState::AttackHorizontal
+                    | player::PlayerState::AttackUp
+                    | player::PlayerState::AttackDown
+            );
+            if is_attack {
+                let glow_scale = 1.08;
+                let glow_size = sprite_size * glow_scale;
+                let glow_offset = (glow_size - sprite_size) / 2.0;
+                let glow_pos = sprite_pos - glow_offset;
+                ctx.draw_sprite_from_sheet_additive(
+                    glow_pos,
+                    glow_size,
+                    [0.6, 0.8, 1.0, 0.35],
+                    frame_rect,
+                    flip,
+                    1,
+                );
+            }
+
+            //? Additive flash during parry active frames
+            if self.player.state == player::PlayerState::Parry {
+                let flash_scale = 1.12;
+                let flash_size = sprite_size * flash_scale;
+                let flash_offset = (flash_size - sprite_size) / 2.0;
+                let flash_pos = sprite_pos - flash_offset;
+                ctx.draw_sprite_from_sheet_additive(
+                    flash_pos,
+                    flash_size,
+                    [1.0, 1.0, 1.0, 0.5],
+                    frame_rect,
+                    flip,
+                    1,
+                );
+            }
+
+            //? Additive trail during dash/air-dash
+            if matches!(
+                self.player.state,
+                player::PlayerState::Dash | player::PlayerState::AirDash
+            ) {
+                let trail_offset = if self.player.facing_right() {
+                    -6.0
+                } else {
+                    6.0
+                };
+                let trail_pos = sprite_pos + engine::Vec2::new(trail_offset, 0.0);
+                ctx.draw_sprite_from_sheet_additive(
+                    trail_pos,
+                    sprite_size,
+                    [0.4, 0.7, 1.0, 0.25],
+                    frame_rect,
+                    flip,
+                    1,
+                );
+            }
+
+            //? Grapple line from player to target during GrapplePull
+            if self.player.state == player::PlayerState::GrapplePull
+                && let Some(target) = self.player.grapple_target
+            {
+                let player_center = self.player.position();
+                let dx = target.x - player_center.x;
+                let dy = target.y - player_center.y;
+                let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+                let segments = (dist / 4.0) as usize;
+                for i in 0..segments {
+                    let t = i as f32 / segments as f32;
+                    let px = player_center.x + dx * t;
+                    let py = player_center.y + dy * t;
+                    let alpha = 0.8 - t * 0.4;
+                    ctx.draw_rect(
+                        engine::Vec2::new(px - 1.0, py - 1.0),
+                        engine::Vec2::new(2.0, 2.0),
+                        [0.2, 0.9, 1.0, alpha],
+                    );
+                }
+            }
+
+            //? Debug overlay: color-coded boxes for player
             if self.scene.show_collision_box {
-                let t = 2.0;
-                let physics_aabb = self.player.collision_aabb();
-                let phys_pos = physics_aabb.top_left();
-                let phys_size = physics_aabb.size;
+                enemy::render_debug_boxes(ctx, &self.player.entity);
+
+                //? Wall contact indicators: small markers on touching side
+                let p = self.player.position();
+                let half_w = config::PLAYER_WIDTH / 2.0;
+                if self.player.entity.touching_wall_left {
+                    ctx.draw_rect(
+                        engine::Vec2::new(p.x - half_w - 3.0, p.y - 4.0),
+                        engine::Vec2::new(3.0, 8.0),
+                        [1.0, 0.5, 0.0, 0.8],
+                    );
+                }
+                if self.player.entity.touching_wall_right {
+                    ctx.draw_rect(
+                        engine::Vec2::new(p.x + half_w, p.y - 4.0),
+                        engine::Vec2::new(3.0, 8.0),
+                        [1.0, 0.5, 0.0, 0.8],
+                    );
+                }
+            }
+        }
+
+        //? Render all alive enemies
+        for enemy in &self.enemies {
+            enemy::render_enemy(ctx, enemy);
+        }
+
+        //? Render projectiles
+        projectile::render_projectiles(ctx, &self.projectiles);
+
+        //? Render VFX bursts (expanding neon squares on kill)
+        for burst in &self.vfx_bursts {
+            let t = 1.0 - (burst.timer as f32 / burst.max_timer as f32);
+            let radius = t * burst.max_timer as f32 * 2.5;
+            let alpha = (1.0 - t) * 0.8;
+            let ring_thickness = 2.0 + (1.0 - t) * 3.0;
+            let c = burst.color;
+
+            //? Outer glow ring
+            let outer_size = engine::Vec2::new(radius * 2.0, radius * 2.0);
+            let outer_pos = burst.position - engine::Vec2::new(radius, radius);
+            ctx.draw_rect(outer_pos, outer_size, [c[0], c[1], c[2], alpha * 0.15]);
+
+            //? Bright inner ring (4 rect edges)
+            let inner_r = radius - ring_thickness;
+            if inner_r > 0.0 {
+                let ring_color = [c[0], c[1], c[2], alpha];
+                let top = burst.position - engine::Vec2::new(radius, radius);
                 ctx.draw_rect(
-                    phys_pos,
-                    engine::Vec2::new(phys_size.x, t),
-                    [1.0, 0.0, 0.0, 1.0],
+                    top,
+                    engine::Vec2::new(radius * 2.0, ring_thickness),
+                    ring_color,
                 );
                 ctx.draw_rect(
-                    phys_pos + engine::Vec2::new(0.0, phys_size.y - t),
-                    engine::Vec2::new(phys_size.x, t),
-                    [1.0, 0.0, 0.0, 1.0],
+                    top + engine::Vec2::new(0.0, radius * 2.0 - ring_thickness),
+                    engine::Vec2::new(radius * 2.0, ring_thickness),
+                    ring_color,
                 );
                 ctx.draw_rect(
-                    phys_pos,
-                    engine::Vec2::new(t, phys_size.y),
-                    [1.0, 0.0, 0.0, 1.0],
+                    top,
+                    engine::Vec2::new(ring_thickness, radius * 2.0),
+                    ring_color,
                 );
                 ctx.draw_rect(
-                    phys_pos + engine::Vec2::new(phys_size.x - t, 0.0),
-                    engine::Vec2::new(t, phys_size.y),
-                    [1.0, 0.0, 0.0, 1.0],
+                    top + engine::Vec2::new(radius * 2.0 - ring_thickness, 0.0),
+                    engine::Vec2::new(ring_thickness, radius * 2.0),
+                    ring_color,
                 );
+            }
+
+            //? Center flash (white, fades quickly)
+            let flash_alpha = ((1.0 - t * 2.0).max(0.0)).powi(2);
+            if flash_alpha > 0.01 {
+                let flash_size = 12.0 * (1.0 - t * 0.5);
+                ctx.draw_rect(
+                    burst.position - engine::Vec2::new(flash_size / 2.0, flash_size / 2.0),
+                    engine::Vec2::new(flash_size, flash_size),
+                    [1.0, 1.0, 1.0, flash_alpha],
+                );
+            }
+        }
+
+        //? Debug overlay: color-coded boxes for enemies
+        if self.scene.show_collision_box {
+            for enemy in &self.enemies {
+                if enemy.is_alive() {
+                    enemy::render_debug_boxes(ctx, &enemy.entity);
+                }
             }
         }
     }
 
     fn ui(&mut self, ctx: &egui::Context, params: &mut engine::scene::SceneParams) {
-        crate::scene::show_ui(ctx, &mut self.scene, params);
-    }
-}
+        if !self.level_editor.active {
+            crate::scene::show_ui(crate::scene::DebugUiParams {
+                ctx,
+                scene: &mut self.scene,
+                params,
+                fps: self.cached_fps,
+                frame_time_ms: self.cached_frame_time_ms,
+                fixed_tick_rate: &mut self.pending_tick_rate,
+                target_fps: &mut self.pending_target_fps,
+                combat: &self.player.entity.combat,
+                input_buffer: &self.player.input_buffer,
+                enemies: &self.enemies,
+                player_state: self.player.state,
+                wall_left: self.player.entity.touching_wall_left,
+                wall_right: self.player.entity.touching_wall_right,
+                dash_cooldown: self.player.dash_cooldown_timer,
+                has_air_dashed: self.player.has_air_dashed(),
+                wall_grab_timer: self.player.wall_grab_timer(),
+                grapple_target: self.player.grapple_target,
+                anim_name: self
+                    .player
+                    .anim_state
+                    .current_animation_name()
+                    .map(String::from),
+                physics_config: &mut self.physics_config,
+                using_gamepad: self.using_gamepad,
+            });
+        }
 
-//? JourneyGame helper methods
-impl JourneyGame {
-    //? Calculate spawn position based on screen height.
-    fn spawn_position(screen_height: f32) -> engine::Vec2 {
-        use crate::config::PLAYER_HEIGHT;
-        let floor_y = screen_height - 50.0;
-        let platform_height = 100.0;
-        let platform_top = floor_y - platform_height / 2.0;
-        engine::Vec2::new(200.0, platform_top - PLAYER_HEIGHT / 2.0 - 5.0)
+        //? Show Level Editor overlay
+        self.level_editor.show_ui(
+            ctx,
+            params,
+            &mut self.level,
+            self.initial_screen_height,
+            self.initial_screen_height,
+        );
     }
 }
 

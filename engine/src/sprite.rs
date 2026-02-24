@@ -15,6 +15,14 @@ use crate::texture::Texture;
 
 const MAX_SPRITES: usize = 1024;
 
+//? GPU blend mode for sprite rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BlendMode {
+    #[default]
+    Alpha,
+    Additive,
+}
+
 //? A rectangle defining a region (screen coordinates or sprite sheet).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
@@ -77,6 +85,7 @@ pub struct Sprite {
     pub source_rect: Option<Rect>, //* Sprite sheet region (pixel coords)
     pub flip_x: bool,
     pub texture_id: usize, //* Which texture to use (0 = white pixel for rects)
+    pub blend_mode: BlendMode,
 }
 
 //? User-facing sprite definition with various builder methods.
@@ -89,6 +98,7 @@ impl Sprite {
             source_rect: None,
             flip_x: false,
             texture_id: 0, //* Default to white pixel
+            blend_mode: BlendMode::Alpha,
         }
     }
 
@@ -107,12 +117,17 @@ impl Sprite {
         self
     }
 
+    pub fn with_blend_mode(mut self, blend_mode: BlendMode) -> Self {
+        self.blend_mode = blend_mode;
+        self
+    }
+
     //? Convert high-level Sprite to low-level SpriteInstance for rendering.
     //* Calculates UV coordinates based on source_rect and texture size,
     //* and applies horizontal flip by negating scale.
     fn to_instance(&self, texture_width: f32, texture_height: f32) -> SpriteInstance {
         let (uv_offset, uv_size) = if let Some(src) = self.source_rect {
-            // Convert pixel coordinates to UV (0.0-1.0)
+            //? Convert pixel coordinates to UV (0.0-1.0)
             let u = src.x / texture_width;
             let v = src.y / texture_height;
             let uw = src.w / texture_width;
@@ -123,20 +138,27 @@ impl Sprite {
             (Vec2::ZERO, Vec2::ONE)
         };
 
-        //? Apply horizontal flip by negating scale
-        let scale = if self.flip_x {
-            Vec2::new(-self.size.x, self.size.y)
+        //? Flip horizontally by mirroring the UV: start sampling from the RIGHT edge
+        //? of the frame and walk left (negative uv_size.x). This keeps scale always
+        //? positive and position always top-left, so callers never need to pre-shift
+        //? the anchor and thus eliminating the ghost/teleport double-offset problem.
+        let (uv_offset, uv_size) = if self.flip_x {
+            (
+                Vec2::new(uv_offset.x + uv_size.x, uv_offset.y),
+                Vec2::new(-uv_size.x, uv_size.y),
+            )
         } else {
-            self.size
+            (uv_offset, uv_size)
         };
 
-        SpriteInstance::new(self.position, scale, self.color, uv_offset, uv_size)
+        SpriteInstance::new(self.position, self.size, self.color, uv_offset, uv_size)
     }
 }
 
 //? Sprite rendering system.
 pub struct SpriteRenderer {
     pipeline: wgpu::RenderPipeline,
+    additive_pipeline: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     texture_bind_group_layout: wgpu::BindGroupLayout,
@@ -146,12 +168,14 @@ pub struct SpriteRenderer {
     rect_instance_buffer: wgpu::Buffer,
     rect_instance_data: Vec<SpriteInstance>,
     sprite_instance_buffer: wgpu::Buffer,
-    sprite_instance_data: Vec<SpriteInstance>,
-    texture_width: f32,
-    texture_height: f32,
 
-    //? Batching by texture ID
-    texture_batches: std::collections::HashMap<usize, Vec<SpriteInstance>>,
+    //? Pre-uploaded batch ranges: (texture_id, start_instance..end_instance)
+    batch_ranges: Vec<(usize, std::ops::Range<u32>)>,
+    additive_batch_ranges: Vec<(usize, std::ops::Range<u32>)>,
+
+    //? Reusable per-frame texture batch map (avoids heap alloc each frame)
+    texture_batches: Vec<Vec<SpriteInstance>>,
+    additive_texture_batches: Vec<Vec<SpriteInstance>>,
 }
 
 impl SpriteRenderer {
@@ -336,9 +360,85 @@ impl SpriteRenderer {
             cache: None,
         });
 
+        let vertex_buffer_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<SpriteInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 8,
+                    shader_location: 1,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 16,
+                    shader_location: 2,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 32,
+                    shader_location: 3,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 40,
+                    shader_location: 4,
+                },
+            ],
+        };
+
+        //? Additive blend pipeline: src color adds to dest (glow effects)
+        let additive_blend = wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::SrcAlpha,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+        };
+
+        let additive_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Sprite Additive Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[vertex_buffer_layout],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(additive_blend),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         //? Return the initialized SpriteRenderer
         Self {
             pipeline,
+            additive_pipeline,
             camera_buffer,
             camera_bind_group,
             texture_bind_group_layout,
@@ -347,10 +447,10 @@ impl SpriteRenderer {
             rect_instance_buffer,
             rect_instance_data: Vec::with_capacity(MAX_SPRITES),
             sprite_instance_buffer,
-            sprite_instance_data: Vec::with_capacity(MAX_SPRITES),
-            texture_width: 1.0,
-            texture_height: 1.0,
-            texture_batches: std::collections::HashMap::new(),
+            batch_ranges: Vec::new(),
+            additive_batch_ranges: Vec::new(),
+            texture_batches: Vec::new(),
+            additive_texture_batches: Vec::new(),
         }
     }
 
@@ -387,13 +487,7 @@ impl SpriteRenderer {
         );
     }
 
-    //? Set the active texture dimensions (for UV coordinate calculation).
-    pub fn set_texture_size(&mut self, width: f32, height: f32) {
-        self.texture_width = width;
-        self.texture_height = height;
-    }
-
-    //? Prepare sprites for rendering, batching by texture ID.
+    //? Prepare sprites for rendering: batch by texture and blend mode, upload once.
     pub fn prepare(
         &mut self,
         queue: &wgpu::Queue,
@@ -401,27 +495,38 @@ impl SpriteRenderer {
         texture_sizes: &[(f32, f32)],
     ) {
         self.rect_instance_data.clear();
-        self.sprite_instance_data.clear();
-        self.texture_batches.clear();
+        self.batch_ranges.clear();
+        self.additive_batch_ranges.clear();
 
-        //? Convert high-level Sprite definitions to low-level SpriteInstance data and batch by texture ID.
-        //* Sprites with a source_rect are considered textured and are batched by their texture_id,
-        //* while sprites without a source_rect are treated as simple colored rectangles using the default white pixel texture.
+        //? Clear and reuse per-texture batch vectors (avoids HashMap alloc each frame)
+        for batch in &mut self.texture_batches {
+            batch.clear();
+        }
+        for batch in &mut self.additive_texture_batches {
+            batch.clear();
+        }
+
+        //? Convert high-level Sprite definitions to low-level SpriteInstance data,
+        //? partitioned by blend mode and then by texture ID.
         for sprite in sprites.iter().take(MAX_SPRITES) {
             if sprite.source_rect.is_some() {
-                //? Textured sprite - batch by texture_id
                 let (tex_width, tex_height) = texture_sizes
                     .get(sprite.texture_id)
                     .copied()
                     .unwrap_or((1.0, 1.0));
 
                 let instance = sprite.to_instance(tex_width, tex_height);
-                self.texture_batches
-                    .entry(sprite.texture_id)
-                    .or_default()
-                    .push(instance);
+
+                let batches = match sprite.blend_mode {
+                    BlendMode::Alpha => &mut self.texture_batches,
+                    BlendMode::Additive => &mut self.additive_texture_batches,
+                };
+
+                if sprite.texture_id >= batches.len() {
+                    batches.resize_with(sprite.texture_id + 1, Vec::new);
+                }
+                batches[sprite.texture_id].push(instance);
             } else {
-                //? Rect (no texture) - uses white pixel
                 self.rect_instance_data.push(sprite.to_instance(1.0, 1.0));
             }
         }
@@ -434,81 +539,90 @@ impl SpriteRenderer {
                 bytemuck::cast_slice(&self.rect_instance_data),
             );
         }
-    }
 
-    //? Render all prepared sprites with multiple texture bind groups.
-    //? bind_groups[0] should be white pixel (for rects), bind_groups[1..] are game textures.
-    pub fn render_multi<'rpass>(
-        &'rpass self,
-        render_pass: &mut wgpu::RenderPass<'rpass>,
-        queue: &wgpu::Queue,
-        bind_groups: &'rpass [wgpu::BindGroup],
-    ) {
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        //? Concatenate alpha batches, then additive batches, into one contiguous buffer
+        let mut all_instances: Vec<SpriteInstance> = Vec::new();
 
-        //? Draw rects with the 1x1 white pixel texture
-        if !self.rect_instance_data.is_empty() {
-            render_pass.set_bind_group(1, &self.default_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.rect_instance_buffer.slice(..));
-            render_pass.draw(0..6, 0..self.rect_instance_data.len() as u32);
-        }
-
-        //? Draw each texture batch with its corresponding bind group
-        for (&texture_id, instances) in &self.texture_batches {
+        for (tex_id, instances) in self.texture_batches.iter().enumerate() {
             if instances.is_empty() {
                 continue;
             }
+            let start = all_instances.len() as u32;
+            all_instances.extend_from_slice(instances);
+            self.batch_ranges
+                .push((tex_id, start..all_instances.len() as u32));
+        }
 
-            //? Upload instances for this texture
+        for (tex_id, instances) in self.additive_texture_batches.iter().enumerate() {
+            if instances.is_empty() {
+                continue;
+            }
+            let start = all_instances.len() as u32;
+            all_instances.extend_from_slice(instances);
+            self.additive_batch_ranges
+                .push((tex_id, start..all_instances.len() as u32));
+        }
+
+        if !all_instances.is_empty() {
             queue.write_buffer(
                 &self.sprite_instance_buffer,
                 0,
-                bytemuck::cast_slice(instances),
+                bytemuck::cast_slice(&all_instances),
             );
-
-            //? Get bind group for this texture (with bounds check)
-            let bind_group = bind_groups
-                .get(texture_id)
-                .unwrap_or(&self.default_bind_group);
-
-            render_pass.set_bind_group(1, bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.sprite_instance_buffer.slice(..));
-            render_pass.draw(0..6, 0..instances.len() as u32);
         }
     }
 
-    //? Render all prepared sprites with the default texture (legacy).
-    pub fn render<'rpass>(&'rpass self, render_pass: &mut wgpu::RenderPass<'rpass>) {
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-
-        if !self.rect_instance_data.is_empty() {
-            render_pass.set_bind_group(1, &self.default_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.rect_instance_buffer.slice(..));
-            render_pass.draw(0..6, 0..self.rect_instance_data.len() as u32);
-        }
-    }
-
-    //? Render all prepared sprites with a custom texture bind group for textured sprites (legacy).
-    pub fn render_split<'rpass>(
+    //? Render all prepared sprites with multiple texture bind groups.
+    //? Alpha-blended sprites first, then additive-blended sprites.
+    //? All buffer uploads happen in prepare(); this only binds and draws.
+    pub fn render_multi<'rpass>(
         &'rpass self,
         render_pass: &mut wgpu::RenderPass<'rpass>,
-        texture_bind_group: &'rpass wgpu::BindGroup,
+        bind_groups: &'rpass [wgpu::BindGroup],
     ) {
-        render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
 
+        //? Draw rects with the 1x1 white pixel texture (always alpha blend)
         if !self.rect_instance_data.is_empty() {
+            render_pass.set_pipeline(&self.pipeline);
             render_pass.set_bind_group(1, &self.default_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.rect_instance_buffer.slice(..));
             render_pass.draw(0..6, 0..self.rect_instance_data.len() as u32);
         }
 
-        if !self.sprite_instance_data.is_empty() {
-            render_pass.set_bind_group(1, texture_bind_group, &[]);
+        //? Draw alpha-blended texture batches
+        let has_alpha = !self.batch_ranges.is_empty();
+        let has_additive = !self.additive_batch_ranges.is_empty();
+
+        if has_alpha || has_additive {
             render_pass.set_vertex_buffer(0, self.sprite_instance_buffer.slice(..));
-            render_pass.draw(0..6, 0..self.sprite_instance_data.len() as u32);
+        }
+
+        if has_alpha {
+            render_pass.set_pipeline(&self.pipeline);
+
+            for &(texture_id, ref range) in &self.batch_ranges {
+                let bind_group = bind_groups
+                    .get(texture_id)
+                    .unwrap_or(&self.default_bind_group);
+
+                render_pass.set_bind_group(1, bind_group, &[]);
+                render_pass.draw(0..6, range.clone());
+            }
+        }
+
+        //? Draw additive-blended texture batches (glow effects)
+        if has_additive {
+            render_pass.set_pipeline(&self.additive_pipeline);
+
+            for &(texture_id, ref range) in &self.additive_batch_ranges {
+                let bind_group = bind_groups
+                    .get(texture_id)
+                    .unwrap_or(&self.default_bind_group);
+
+                render_pass.set_bind_group(1, bind_group, &[]);
+                render_pass.draw(0..6, range.clone());
+            }
         }
     }
 }

@@ -38,22 +38,32 @@ pub struct AnimationState {
     pub frame_index: usize,
     pub timer: f32,
     animations: Vec<AnimationDef>,
+    current_index: usize,
 }
 
 //? Create a new runtime state from a list of `AnimationDef`s and a default name.
 impl AnimationState {
     pub fn new(animations: Vec<AnimationDef>, default_anim: &str) -> Self {
+        let current_index = animations
+            .iter()
+            .position(|a| a.name == default_anim)
+            .unwrap_or(0);
+        let current_anim = animations
+            .get(current_index)
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| default_anim.to_string());
         Self {
-            current_anim: default_anim.to_string(),
+            current_anim,
             frame_index: 0,
             timer: 0.0,
             animations,
+            current_index,
         }
     }
 
     //? Advance the timer and update the current frame index accordingly.
     pub fn update(&mut self, dt: f32) {
-        let anim = match self.animations.iter().find(|a| a.name == self.current_anim) {
+        let anim = match self.animations.get(self.current_index) {
             Some(a) => a,
             None => return,
         };
@@ -75,18 +85,17 @@ impl AnimationState {
     }
 
     //? Return the current animation definition and the active frame index.
-    //* Useful for callers that know how to map `AnimationDef` -> texture/rect.
     pub fn current(&self) -> Option<(&AnimationDef, usize)> {
-        let anim = self
-            .animations
-            .iter()
-            .find(|a| a.name == self.current_anim)?;
+        let anim = self.animations.get(self.current_index)?;
         Some((anim, self.frame_index))
     }
 
     //? Switch to a different animation by name (resets frame/timer).
     pub fn play(&mut self, anim_name: &str) {
-        if self.current_anim != anim_name {
+        if self.current_anim != anim_name
+            && let Some(idx) = self.animations.iter().position(|a| a.name == anim_name)
+        {
+            self.current_index = idx;
             self.current_anim = anim_name.to_string();
             self.frame_index = 0;
             self.timer = 0.0;
@@ -95,7 +104,7 @@ impl AnimationState {
 
     //? Returns true if the current anim is non-looping and has reached its last frame.
     pub fn is_finished(&self) -> bool {
-        let anim = match self.animations.iter().find(|a| a.name == self.current_anim) {
+        let anim = match self.animations.get(self.current_index) {
             Some(a) => a,
             None => return true,
         };
@@ -110,9 +119,7 @@ impl AnimationState {
 
     //? Progress through the current animation as a value in [0.0, 1.0].
     pub fn get_progress(&self) -> f32 {
-        let anim = self.animations.iter().find(|a| a.name == self.current_anim);
-
-        if let Some(anim) = anim {
+        if let Some(anim) = self.animations.get(self.current_index) {
             if anim.frame_count == 0 {
                 return 0.0;
             }

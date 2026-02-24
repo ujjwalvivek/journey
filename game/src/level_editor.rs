@@ -1,0 +1,457 @@
+/**--------------------------------------------------------------------------------
+*!  Level Editor
+*?  Toggle with F12
+*?  Visual mode: Pan with WASD/Arrow keys or middle-click drag. Saves on exit.
+*?  Text mode: Edit the raw ASCII level string with a live minimap preview.
+*--------------------------------------------------------------------------------**/
+use crate::level::Level;
+
+pub struct LevelEditor {
+    pub active: bool,
+    pub visual_mode: bool,
+    pub text_buffer: String,
+    pub camera_x: f32,
+    pub camera_y: f32,
+    pub selected_tile: char,
+}
+
+impl Default for LevelEditor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LevelEditor {
+    pub fn new() -> Self {
+        //? Load the current level text so the buffer is populated initially
+        let initial_text = {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                std::fs::read_to_string("game/assets/level/world.txt")
+                    .unwrap_or_else(|_| include_str!("../assets/level/world.txt").to_string())
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                let window = web_sys::window().unwrap();
+                let storage = window.local_storage().unwrap().unwrap();
+                if let Ok(Some(saved)) = storage.get_item("world.txt") {
+                    saved
+                } else {
+                    include_str!("../assets/level/world.txt").to_string()
+                }
+            }
+        };
+
+        Self {
+            active: false,
+            visual_mode: false,
+            text_buffer: initial_text,
+            camera_x: 0.0,
+            camera_y: 0.0,
+            selected_tile: '#',
+        }
+    }
+
+    pub fn toggle(
+        &mut self,
+        player_x: f32,
+        level_floor_y: f32,
+        _screen_width: f32,
+        _screen_height: f32,
+    ) {
+        self.active = !self.active;
+        if self.active {
+            //? Center the editor camera horizontally on the player, and pin the bottom to the level floor
+            let internal_w = 640.0;
+            let internal_h = 360.0;
+            self.camera_x = (player_x - internal_w / 2.0).max(0.0);
+            self.camera_y = (level_floor_y - internal_h).max(0.0);
+        }
+    }
+
+    pub fn show_ui(
+        &mut self,
+        ctx: &egui::Context,
+        _scene_params: &mut engine::scene::SceneParams,
+        level: &mut Level,
+        screen_width: f32,
+        screen_height: f32,
+    ) {
+        if !self.active {
+            return;
+        }
+
+        if self.visual_mode {
+            self.show_visual_editor(ctx, level, screen_width, screen_height);
+        } else {
+            self.show_text_editor(ctx, level, screen_height);
+        }
+    }
+
+    fn show_text_editor(&mut self, ctx: &egui::Context, level: &mut Level, screen_height: f32) {
+        #[allow(deprecated)]
+        let rect = ctx.screen_rect();
+        let total_h = rect.height();
+
+        let panel_frame = egui::Frame::NONE
+            .fill(egui::Color32::from_rgb(20, 20, 20))
+            .inner_margin(egui::vec2(32.0, 32.0));
+
+        egui::TopBottomPanel::top("text_editor_header")
+            .frame(panel_frame)
+            .show_separator_line(false)
+            .exact_height(total_h * 0.1)
+            .show(ctx, |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.heading(
+                        egui::RichText::new("LEVEL EDITOR (TEXT MODE)")
+                            .size(24.0)
+                            .strong()
+                            .color(egui::Color32::WHITE),
+                    );
+                });
+            });
+
+        egui::TopBottomPanel::top("text_editor_toolbar")
+            .frame(panel_frame)
+            .show_separator_line(false)
+            .exact_height(total_h * 0.1)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(20.0);
+                    let btn_size = egui::vec2(160.0, 30.0);
+                    if ui
+                        .add_sized(
+                            btn_size,
+                            egui::Button::new(
+                                egui::RichText::new("Save & Reload").strong().size(14.0),
+                            ),
+                        )
+                        .clicked()
+                    {
+                        self.save_and_reload(level, screen_height);
+                    }
+                    ui.add_space(10.0);
+                    if ui
+                        .add_sized(
+                            btn_size,
+                            egui::Button::new(
+                                egui::RichText::new("Switch to Visual Editor")
+                                    .strong()
+                                    .size(14.0),
+                            ),
+                        )
+                        .clicked()
+                    {
+                        self.visual_mode = true;
+                        self.save_and_reload(level, screen_height);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label("Press F12 to close");
+                    });
+                });
+            });
+
+        egui::TopBottomPanel::bottom("text_editor_footer")
+            .frame(panel_frame)
+            .show_separator_line(false)
+            .exact_height(total_h * 0.05)
+            .show(ctx, |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.label(
+                        egui::RichText::new("Journey Engine")
+                            .size(12.0)
+                            .color(egui::Color32::from_rgba_unmultiplied(12, 12, 12, 255)),
+                    );
+                });
+            });
+
+        egui::TopBottomPanel::bottom("text_editor_minimap")
+            .frame(panel_frame)
+            .show_separator_line(false)
+            .exact_height(total_h * 0.40)
+            .show(ctx, |ui| {
+                ui.heading("Minimap Preview");
+                ui.add_space(8.0);
+                egui::ScrollArea::both()
+                    .id_salt("minimap_scroll")
+                    .show(ui, |ui| {
+                        let lines: Vec<&str> = self.text_buffer.lines().collect();
+                        let rows = lines.len();
+                        let cols = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+
+                        let available_width = ui.available_size_before_wrap().x.max(1.0);
+                        let block_size = if cols > 0 {
+                            (available_width / cols as f32).clamp(4.0, 24.0)
+                        } else {
+                            6.0
+                        };
+
+                        let minimap_size =
+                            egui::vec2(cols as f32 * block_size, rows as f32 * block_size);
+
+                        let (map_rect, _response) =
+                            ui.allocate_exact_size(minimap_size, egui::Sense::hover());
+
+                        if ui.is_rect_visible(map_rect) {
+                            let painter = ui.painter();
+                            for (r, line) in lines.iter().enumerate() {
+                                for (c, ch) in line.chars().enumerate() {
+                                    let color = match ch {
+                                        '#' => egui::Color32::DARK_GRAY,
+                                        '=' => egui::Color32::GRAY,
+                                        '_' => egui::Color32::LIGHT_GRAY,
+                                        '@' => egui::Color32::GREEN,
+                                        'O' => egui::Color32::YELLOW,
+                                        '*' => egui::Color32::from_rgb(50, 200, 255),
+                                        'E' | 'S' | 'R' => egui::Color32::RED,
+                                        _ => continue,
+                                    };
+                                    let b_min = map_rect.min
+                                        + egui::vec2(c as f32 * block_size, r as f32 * block_size);
+                                    let b_max = b_min + egui::vec2(block_size, block_size);
+                                    painter.rect_filled(
+                                        egui::Rect::from_min_max(b_min, b_max),
+                                        0.0,
+                                        color,
+                                    );
+                                }
+                            }
+                        }
+                    });
+            });
+
+        egui::CentralPanel::default()
+            .frame(panel_frame)
+            .show(ctx, |ui| {
+                egui::ScrollArea::both()
+                    .id_salt("text_editor_scroll")
+                    .show(ui, |ui| {
+                        ui.add_space(20.0);
+                        ui.heading("ASCII Preview");
+                        ui.add_space(8.0);
+
+                        egui::TextEdit::multiline(&mut self.text_buffer)
+                            .font(egui::TextStyle::Monospace)
+                            .code_editor()
+                            .desired_width(f32::INFINITY)
+                            .lock_focus(true)
+                            .show(ui);
+                    });
+            });
+    }
+
+    fn save_and_reload(&self, level: &mut Level, screen_height: f32) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Err(e) = std::fs::write("game/assets/level/world.txt", &self.text_buffer) {
+                log::error!("Failed to save level file: {}", e);
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let window = web_sys::window().unwrap();
+            let storage = window.local_storage().unwrap().unwrap();
+            if let Err(e) = storage.set_item("world.txt", &self.text_buffer) {
+                log::error!("Failed to save WASM level to local storage: {:?}", e);
+            }
+        }
+
+        //? Reload the level purely from the string buffer in memory
+        level.reload_from_str(&self.text_buffer, screen_height);
+    }
+
+    //? Visual editor mode with a game-like map and tile palette
+    fn show_visual_editor(
+        &mut self,
+        egui_ctx: &egui::Context,
+        level: &mut Level,
+        _game_w: f32,
+        _game_h: f32,
+    ) {
+        let internal_w = 640.0;
+        let internal_h = 360.0;
+
+        #[allow(deprecated)]
+        let logical_rect = egui_ctx.screen_rect();
+        let logical_w = logical_rect.width();
+        let logical_h = logical_rect.height();
+
+        let scale = (logical_w / internal_w).min(logical_h / internal_h);
+        let scaled_w = internal_w * scale;
+        let scaled_h = internal_h * scale;
+        let vp_x = (logical_w - scaled_w) / 2.0;
+        let vp_y = (logical_h - scaled_h) / 2.0;
+
+        let pan_speed = 10.0;
+        let mut drag_delta = egui::Vec2::ZERO;
+
+        egui_ctx.input(|i| {
+            if i.key_down(egui::Key::W) || i.key_down(egui::Key::ArrowUp) {
+                self.camera_y -= pan_speed;
+            }
+            if i.key_down(egui::Key::S) || i.key_down(egui::Key::ArrowDown) {
+                self.camera_y += pan_speed;
+            }
+            if i.key_down(egui::Key::A) || i.key_down(egui::Key::ArrowLeft) {
+                self.camera_x -= pan_speed;
+            }
+            if i.key_down(egui::Key::D) || i.key_down(egui::Key::ArrowRight) {
+                self.camera_x += pan_speed;
+            }
+            //? Middle click drag
+            if i.pointer.middle_down() {
+                drag_delta = i.pointer.delta();
+            }
+        });
+
+        if drag_delta != egui::Vec2::ZERO {
+            //? Negative because dragging the mouse right moves the camera left
+            self.camera_x -= drag_delta.x / scale;
+            self.camera_y -= drag_delta.y / scale;
+        }
+
+        self.camera_x = self.camera_x.max(0.0);
+
+        let tile_size = 16.0;
+        let total_rows = self.text_buffer.lines().count() as f32;
+        let offset_y = internal_h - (total_rows * tile_size);
+        self.camera_y = self.camera_y.max(offset_y);
+        let start_col = (self.camera_x / tile_size).floor() as i32;
+        let end_col = ((self.camera_x + internal_w) / tile_size).ceil() as i32;
+        let start_row = ((self.camera_y - offset_y) / tile_size).floor() as i32;
+        let end_row = ((self.camera_y + internal_h - offset_y) / tile_size).ceil() as i32;
+
+        let painter = egui_ctx.layer_painter(egui::LayerId::background());
+
+        let overlay_color = egui::Color32::from_black_alpha(150);
+        painter.rect_filled(logical_rect, 0.0, overlay_color);
+
+        let grid_color = egui::Color32::from_white_alpha(80);
+
+        //? Draw grid lines (horizontal)
+        for r in start_row..=end_row {
+            //* matching level.rs bottom-anchor math: y = screen_height - (total_rows - row)*tile_size
+            let game_y = offset_y + r as f32 * tile_size - self.camera_y;
+            let egui_y = vp_y + game_y * scale;
+            painter.line_segment(
+                [
+                    egui::pos2(vp_x, egui_y),
+                    egui::pos2(vp_x + scaled_w, egui_y),
+                ],
+                egui::Stroke::new(2.0, grid_color),
+            );
+        }
+        //? Draw grid lines (vertical)
+        for c in start_col..=end_col {
+            let game_x = c as f32 * tile_size - self.camera_x;
+            let egui_x = vp_x + game_x * scale;
+            painter.line_segment(
+                [
+                    egui::pos2(egui_x, vp_y),
+                    egui::pos2(egui_x, vp_y + scaled_h),
+                ],
+                egui::Stroke::new(2.0, grid_color),
+            );
+        }
+
+        //? Egui UI Overlay for Palette
+        egui::Window::new("Visual Editor Tools")
+            .fixed_pos(egui::pos2(10.0, 20.0))
+            .show(egui_ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("Switch to Text Editor").clicked() {
+                        self.visual_mode = false;
+                    }
+                    if ui.button("Save & Reload").clicked() {
+                        self.save_and_reload(level, internal_h);
+                    }
+                    ui.label("Pan with WASD/Arrows or Middle-Click drag");
+                });
+                ui.separator();
+                ui.label("Palette:");
+                ui.horizontal(|ui| {
+                    let tiles = [
+                        ('#', "Wall"),
+                        ('=', "Floor"),
+                        ('_', "One-Way Platform"),
+                        ('*', "Grapple Node"),
+                        ('@', "Player Spawn"),
+                        ('E', "Grunt Enemy"),
+                        ('S', "Sniper Enemy"),
+                        ('R', "Ronin Enemy"),
+                        ('O', "Exit"),
+                        ('.', "Erase"),
+                    ];
+                    for (ch, name) in tiles.iter() {
+                        let selected = self.selected_tile == *ch;
+                        if ui
+                            .selectable_label(selected, format!("{} {}", ch, name))
+                            .clicked()
+                        {
+                            self.selected_tile = *ch;
+                        }
+                    }
+                });
+            });
+
+        //? Handle tile painting when clicking on the gameplay area (outside the UI windows)
+        if !egui_ctx.wants_pointer_input() {
+            egui_ctx.input(|i| {
+                #[allow(clippy::collapsible_if)]
+                if i.pointer.primary_down() || i.pointer.secondary_down() {
+                    if let Some(mouse_pos) = i.pointer.interact_pos() {
+                        //? Ensure to paint within the game viewport letterbox
+                        if mouse_pos.x >= vp_x
+                            && mouse_pos.x <= vp_x + scaled_w
+                            && mouse_pos.y >= vp_y
+                            && mouse_pos.y <= vp_y + scaled_h
+                        {
+                            let game_x = (mouse_pos.x - vp_x) / scale + self.camera_x;
+                            let game_y = (mouse_pos.y - vp_y) / scale + self.camera_y;
+
+                            let col = (game_x / tile_size).floor() as i32;
+                            let row_i32 = ((game_y - offset_y) / tile_size).floor() as i32;
+
+                            //? Edit the text_buffer safely
+                            let mut lines: Vec<String> =
+                                self.text_buffer.lines().map(String::from).collect();
+                            let mut changed = false;
+
+                            if row_i32 >= 0 && (row_i32 as usize) < lines.len() {
+                                let row = row_i32 as usize;
+                                let mut chars: Vec<char> = lines[row].chars().collect();
+                                if col >= 0 && (col as usize) < chars.len() {
+                                    let col_u = col as usize;
+                                    //? Right click = Erase ('.'). Left click = Paint selected tile
+                                    let paint_char = if i.pointer.secondary_down() {
+                                        '.'
+                                    } else {
+                                        self.selected_tile
+                                    };
+
+                                    if chars[col_u] != paint_char {
+                                        chars[col_u] = paint_char;
+                                        lines[row] = chars.into_iter().collect();
+                                        changed = true;
+                                    }
+                                }
+                            }
+
+                            if changed {
+                                self.text_buffer = lines.join("\n");
+                                //? Hot-reload in memory.
+                                level.reload_from_str(&self.text_buffer, internal_h);
+                            }
+                        }
+                    }
+                }
+
+                //? Mouse click release saves to disk
+                if i.pointer.primary_released() || i.pointer.secondary_released() {
+                    self.save_and_reload(level, internal_h);
+                }
+            });
+        }
+    }
+}

@@ -18,12 +18,12 @@ pub struct SceneParams {
 impl Default for SceneParams {
     fn default() -> Self {
         Self {
-            background_color: [1.0, 0.827, 0.0], // #FFD300
+            background_color: [1.0, 1.0, 1.0], //* rgb(255, 255, 255)
             seed: 42,
             fog_enabled: true,
             fog_density: 10.0,
             fog_opacity: 1.0,
-            fog_color: [1.0, 1.0, 1.0], // #ffffff
+            fog_color: [0.706, 0.706, 0.706], //* rgb(180, 180, 180)
             fog_anim_speed: 0.5,
             time: 0.0,
         }
@@ -35,7 +35,7 @@ pub fn show_ui(ctx: &egui::Context, params: &mut SceneParams) {
     let content_rect = ctx.available_rect();
     let window_width = 280.0f32.min(content_rect.width() * 0.9);
 
-    egui::Window::new("Engine Debug Controls ")
+    egui::Window::new("Noise Controls")
         .default_open(false)
         .default_width(window_width)
         .default_pos([10.0, 50.0])

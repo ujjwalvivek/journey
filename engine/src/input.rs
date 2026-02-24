@@ -21,8 +21,8 @@ pub enum GameAction {
     Jump,
     Attack,
     Block,
-    Roll,
-    Run,
+    Dash,
+    Grapple,
 }
 
 //? Keyboard key enumeration (hardware-specific).
@@ -40,6 +40,7 @@ pub enum Key {
     Down,
     Left,
     Right,
+    F12,
 }
 
 impl Key {
@@ -56,6 +57,7 @@ impl Key {
             KeyCode::ArrowDown => Some(Key::Down),
             KeyCode::ArrowLeft => Some(Key::Left),
             KeyCode::ArrowRight => Some(Key::Right),
+            KeyCode::F12 => Some(Key::F12),
             _ => None,
         }
     }
@@ -85,8 +87,8 @@ impl Default for InputMap {
         keyboard_map.insert(Key::S, GameAction::MoveDown);
         keyboard_map.insert(Key::Down, GameAction::MoveDown);
         keyboard_map.insert(Key::Space, GameAction::Jump);
-        keyboard_map.insert(Key::Alt, GameAction::Roll);
-        keyboard_map.insert(Key::Shift, GameAction::Run);
+        keyboard_map.insert(Key::Shift, GameAction::Dash);
+        keyboard_map.insert(Key::Alt, GameAction::Grapple);
 
         //? Default gamepad bindings (native only)
         #[cfg(not(target_arch = "wasm32"))]
@@ -95,8 +97,8 @@ impl Default for InputMap {
             map.insert(Button::South, GameAction::Jump);
             map.insert(Button::West, GameAction::Attack);
             map.insert(Button::RightTrigger, GameAction::Block);
-            map.insert(Button::RightTrigger2, GameAction::Roll);
-            map.insert(Button::LeftTrigger2, GameAction::Run);
+            map.insert(Button::RightTrigger2, GameAction::Dash);
+            map.insert(Button::LeftTrigger2, GameAction::Grapple);
             map
         };
 
@@ -152,15 +154,19 @@ struct BufferedInput {
 //? Input state tracking keyboard, mouse, and gamepad.
 //* bool updated by winit event handlers.
 pub struct InputState {
-    keys: [bool; 11],         //* Raw keyboard state
-    actions: [bool; 9],       //* Action state (derived from keys + gamepad)
-    actions_prev: [bool; 9],  //* Previous frame action state (for just_pressed)
-    mouse_buttons: [bool; 3], //* Left, Right, Middle
-    gamepad_axes: [f32; 2],   //* Left stick X, Y
+    keys: [bool; 12],
+    keys_prev: [bool; 12],
+    actions: [bool; 9],
+    actions_prev: [bool; 9],
+    mouse_buttons: [bool; 3],
+    gamepad_axes: [f32; 2],
+
+    #[cfg(not(target_arch = "wasm32"))]
+    gamepad_buttons: [bool; 9],
     input_map: InputMap,
 
     #[cfg(not(target_arch = "wasm32"))]
-    gilrs: Gilrs,
+    gilrs: Option<Gilrs>,
     input_buffer: Vec<BufferedInput>,
     current_time: f32,
 }
@@ -168,18 +174,24 @@ pub struct InputState {
 impl InputState {
     pub fn new() -> Self {
         Self {
-            keys: [false; 11],
+            keys: [false; 12],
+            keys_prev: [false; 12],
             actions: [false; 9],
             actions_prev: [false; 9],
             mouse_buttons: [false; 3],
             gamepad_axes: [0.0; 2],
+            #[cfg(not(target_arch = "wasm32"))]
+            gamepad_buttons: [false; 9],
             input_map: InputMap::new(),
 
             #[cfg(not(target_arch = "wasm32"))]
-            gilrs: Gilrs::new().unwrap_or_else(|e| {
-                log::warn!("Failed to initialize gamepad support: {}", e);
-                panic!("Gamepad initialization failed twice");
-            }),
+            gilrs: match Gilrs::new() {
+                Ok(g) => Some(g),
+                Err(e) => {
+                    log::warn!("Failed to initialize gamepad support: {e}");
+                    None
+                }
+            },
             input_buffer: Vec::with_capacity(8),
             current_time: 0.0,
         }
@@ -221,6 +233,13 @@ impl InputState {
     #[allow(dead_code)]
     pub fn is_key_pressed(&self, key: Key) -> bool {
         self.keys[key as usize]
+    }
+
+    //? Check if a raw key was just pressed this frame.
+    #[allow(dead_code)]
+    pub fn is_key_just_pressed(&self, key: Key) -> bool {
+        let idx = key as usize;
+        self.keys[idx] && !self.keys_prev[idx]
     }
 
     //? Check if a mouse button is pressed.
@@ -269,6 +288,25 @@ impl InputState {
         value
     }
 
+    //? Return true if any keyboard key or mouse button is currently down.
+    pub fn any_keyboard_or_mouse(&self) -> bool {
+        self.keys.iter().any(|&k| k) || self.mouse_buttons.iter().any(|&b| b)
+    }
+
+    //? Return true if any gamepad axis or button is active.
+    pub fn any_gamepad(&self) -> bool {
+        if self.gamepad_axes.iter().any(|&a| a.abs() > 0.1) {
+            return true;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if self.gamepad_buttons.iter().any(|&b| b) {
+                return true;
+            }
+        }
+        false
+    }
+
     //? Called at the start of each frame. Saves previous state, rebuilds
     //? actions from raw keyboard/mouse/gamepad, and polls gamepad events.
     //? Also buffers new pressed actions and cleans up old buffer entries.
@@ -295,25 +333,34 @@ impl InputState {
         //? Poll and apply gamepad events (native only)
         #[cfg(not(target_arch = "wasm32"))]
         {
-            while let Some(Event { event, .. }) = self.gilrs.next_event() {
-                match event {
-                    EventType::ButtonPressed(button, _) => {
-                        if let Some(action) = self.input_map.get_action_for_button(button) {
-                            self.actions[action as usize] = true;
+            if let Some(ref mut gilrs) = self.gilrs {
+                while let Some(Event { event, .. }) = gilrs.next_event() {
+                    match event {
+                        EventType::ButtonPressed(button, _) => {
+                            if let Some(action) = self.input_map.get_action_for_button(button) {
+                                self.gamepad_buttons[action as usize] = true;
+                            }
                         }
-                    }
-                    EventType::ButtonReleased(button, _) => {
-                        if let Some(action) = self.input_map.get_action_for_button(button) {
-                            self.actions[action as usize] = false;
+                        EventType::ButtonReleased(button, _) => {
+                            if let Some(action) = self.input_map.get_action_for_button(button) {
+                                self.gamepad_buttons[action as usize] = false;
+                            }
                         }
+                        EventType::AxisChanged(Axis::LeftStickX, value, _) => {
+                            self.gamepad_axes[0] = value;
+                        }
+                        EventType::AxisChanged(Axis::LeftStickY, value, _) => {
+                            self.gamepad_axes[1] = -value;
+                        }
+                        _ => {}
                     }
-                    EventType::AxisChanged(Axis::LeftStickX, value, _) => {
-                        self.gamepad_axes[0] = value;
-                    }
-                    EventType::AxisChanged(Axis::LeftStickY, value, _) => {
-                        self.gamepad_axes[1] = -value;
-                    }
-                    _ => {}
+                }
+            }
+
+            //? Merge persistent gamepad button state into actions
+            for i in 0..9 {
+                if self.gamepad_buttons[i] {
+                    self.actions[i] = true;
                 }
             }
         }
@@ -328,8 +375,8 @@ impl InputState {
                 4 => GameAction::Jump,
                 5 => GameAction::Attack,
                 6 => GameAction::Block,
-                7 => GameAction::Roll,
-                8 => GameAction::Run,
+                7 => GameAction::Dash,
+                8 => GameAction::Grapple,
                 _ => continue,
             };
 
@@ -345,6 +392,10 @@ impl InputState {
         //? Clean up old buffer entries (older than 1 second)
         self.input_buffer
             .retain(|buffered| self.current_time - buffered.time_pressed < 1.0);
+    }
+
+    pub fn end_frame(&mut self) {
+        self.keys_prev = self.keys;
     }
 
     //? Handle winit keyboard events (updates raw key state only).

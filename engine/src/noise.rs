@@ -1,16 +1,10 @@
 /**--------------------------------------------------------------------------------
 *!  Procedural noise generation and scene rendering.
-*?  Contains the legacy Perlin fog pipeline, preserved from the
-*?  original WASM prototype. [`render_scene`] remains exported via `wasm-bindgen`
-*?  for the web frontend. [`render_scene_to_buffer`] provides a zero-allocation
-*?  variant for the native render loop.
+*?  Contains the Perlin fog pipeline used by the engine render loop.
+*?  [`render_scene_to_buffer`] is the zero-allocation variant called each frame.
 *--------------------------------------------------------------------------------**/
 use crate::scene::SceneParams;
 use noise::{NoiseFn, Perlin};
-
-//? Make the wasm-bindgen helpers available for WASM builds.
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
 
 //? Convert a hex color string input to an RGB tuple.
 pub fn hex_to_rgb(hex: &str) -> (u8, u8, u8) {
@@ -67,11 +61,11 @@ pub fn apply_fog(
     time: f32,
     density: f32,
     opacity: f32,
+    perlin: &Perlin,
     seed: u32,
     fog_rgb: (u8, u8, u8),
     fog_anim_speed: f32,
 ) {
-    let perlin = Perlin::new(seed);
     for y in 0..height {
         for x in 0..width {
             let nx = x as f64 / width as f64;
@@ -105,52 +99,25 @@ pub fn apply_fog(
     }
 }
 
-//? Legacy WASM-exported scene renderer. Allocates a new buffer each call.
-#[allow(clippy::too_many_arguments)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
-pub fn render_scene(
+//? Render the scene into a pre-allocated buffer.
+//? Accepts an optional cached Perlin instance and rebuilds only when seed changes.
+pub fn render_scene_to_buffer(
+    buffer: &mut [u8],
     width: u32,
     height: u32,
-    time: f32,
-    quality: u32,
-    background_hex: &str,
-    fog_on: bool,
-    fog_density: f32,
-    fog_opacity: f32,
-    fog_seed: u32,
-    fog_hex: &str,
-    fog_anim_speed: f32,
-) -> Vec<u8> {
-    let q = quality.max(1);
-    let w = width / q;
-    let h = height / q;
-    let mut buffer = vec![0u8; (w * h * 4) as usize];
-
-    let background_rgb = hex_to_rgb(background_hex);
-    draw_gradient(&mut buffer, w, h, background_rgb, background_rgb);
-
-    if fog_on {
-        apply_fog(
-            &mut buffer,
-            w,
-            h,
-            time,
-            fog_density,
-            fog_opacity,
-            fog_seed,
-            hex_to_rgb(fog_hex),
-            fog_anim_speed,
-        );
-    }
-    buffer
-}
-
-//? Render the scene into a pre-allocated buffer (zero-allocation hot path).
-pub fn render_scene_to_buffer(buffer: &mut [u8], width: u32, height: u32, params: &SceneParams) {
+    params: &SceneParams,
+    perlin_cache: &mut Option<(u32, Perlin)>,
+) {
     let bg_rgb = color_f32_to_u8(params.background_color);
     draw_gradient(buffer, width, height, bg_rgb, bg_rgb);
 
     if params.fog_enabled {
+        //? Rebuild Perlin only when seed changes
+        if !matches!(perlin_cache, Some((s, _)) if *s == params.seed) {
+            *perlin_cache = Some((params.seed, Perlin::new(params.seed)));
+        }
+        let perlin = &perlin_cache.as_ref().unwrap().1;
+
         let fog_rgb = color_f32_to_u8(params.fog_color);
         apply_fog(
             buffer,
@@ -159,6 +126,7 @@ pub fn render_scene_to_buffer(buffer: &mut [u8], width: u32, height: u32, params
             params.time,
             params.fog_density,
             params.fog_opacity,
+            perlin,
             params.seed,
             fog_rgb,
             params.fog_anim_speed,
@@ -206,7 +174,8 @@ mod tests {
         let params = SceneParams::default();
         let (w, h) = (4, 4);
         let mut buf = vec![0u8; (w * h * 4) as usize];
-        render_scene_to_buffer(&mut buf, w, h, &params);
+        let mut cache = None;
+        render_scene_to_buffer(&mut buf, w, h, &params, &mut cache);
         assert!(
             buf.iter().any(|&b| b != 0),
             "Buffer should contain non-zero pixels"
@@ -230,12 +199,12 @@ mod tests {
 
         let (w, h) = (8u32, 8u32);
         let mut buf = vec![0u8; (w * h * 4) as usize];
-        render_scene_to_buffer(&mut buf, w, h, &params);
+        let mut cache = None;
+        render_scene_to_buffer(&mut buf, w, h, &params, &mut cache);
 
         let (bg_r, bg_g, bg_b) = color_f32_to_u8(params.background_color);
         let half = (h / 2) as usize;
 
-        // bottom half must remain equal to background
         for y in half..(h as usize) {
             for x in 0..(w as usize) {
                 let idx = (((y as u32) * w + x as u32) * 4) as usize;
@@ -245,7 +214,6 @@ mod tests {
             }
         }
 
-        // top half should contain at least one non-background pixel (cloud)
         let mut top_changed = false;
         for y in 0..half {
             for x in 0..(w as usize) {

@@ -96,14 +96,14 @@
     <p>This game is best experienced in landscape mode with a wider screen.</p>
   </div>
   <script>
-    // Canvas resize glue for iframes and devicePixelRatio changes.
-    // winit may not detect these on its own; dispatching a resize event
-    // lets the Rust event loop pick up the new dimensions.
+    //? Canvas resize glue for iframes and devicePixelRatio changes.
+    //* winit may not detect these on its own; dispatching a resize event
+    //* lets the Rust event loop pick up the new dimensions.
     new ResizeObserver(function () {
       window.dispatchEvent(new Event('resize'));
     }).observe(document.documentElement);
 
-    // Re-register on each DPR change (e.g., dragging between monitors)
+    //? Re-register on each DPR change
     (function watchDPR() {
       matchMedia('(resolution: ' + devicePixelRatio + 'dppx)')
         .addEventListener('change', function () {

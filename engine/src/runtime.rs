@@ -1,5 +1,5 @@
 /**--------------------------------------------------------------------------------
-*!  Cross-platform engine runtime — wGPU rendering loop with egui overlay.
+*!  Cross-platform engine runtime and wGPU rendering loop with egui overlay.
 *?  Handles both native (desktop) and WASM (web) targets. The core rendering
 *?  pipeline (CPU noise → GPU texture → full-screen quad + egui overlay) is
 *?  shared; only event-loop bootstrap and async GPU initialization differ.
@@ -10,6 +10,7 @@ use crate::context::Context;
 use crate::noise;
 use crate::scene::SceneParams;
 use crate::sprite::SpriteRenderer;
+use crate::time::FixedTime;
 use egui_wgpu::ScreenDescriptor;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -26,6 +27,15 @@ use winit::window::{Window, WindowAttributes, WindowId};
 //* Upscaled with nearest-neighbor filtering for a retro pixelated look.
 const SIM_WIDTH: u32 = 32;
 const SIM_HEIGHT: u32 = 32;
+
+//? Minimum window dimensions to prevent invalid rendering
+const MIN_WIDTH: u32 = 320;
+const MIN_HEIGHT: u32 = 240;
+
+//? Internal game resolution, all gameplay renders to this fixed-size offscreen buffer.
+//? Provides the ideal balance between chunky retro aesthetic and enough canvas for dense cyberpunk detail.
+pub const INTERNAL_WIDTH: u32 = 640;
+pub const INTERNAL_HEIGHT: u32 = 360;
 
 const NOISE_REGEN_INTERVAL: Duration = Duration::from_millis(16); //* ~60 Hz
 
@@ -273,8 +283,6 @@ impl<G: GameApp> ApplicationHandler for App<G> {
                         let phys_h = (css_h * dpr).round() as u32;
 
                         //? Skip resize if dimensions are too small (portrait warning showing)
-                        const MIN_WIDTH: u32 = 320;
-                        const MIN_HEIGHT: u32 = 240;
 
                         let dpr_changed = (dpr - state.scale_factor).abs() > 0.01;
                         let size_changed =
@@ -326,6 +334,13 @@ struct EngineState<G: GameApp> {
     noise_dirty: bool,
     scale_factor: f64,
     render_format: wgpu::TextureFormat,
+    fixed_time: FixedTime,
+    perlin_cache: Option<(u32, ::noise::Perlin)>,
+    fps_samples: std::collections::VecDeque<f32>,
+    #[allow(dead_code)] //* Kept alive - GPU bind group references the underlying TextureView
+    offscreen_texture: wgpu::Texture,
+    offscreen_view: wgpu::TextureView,
+    blit_bind_group: wgpu::BindGroup,
 }
 
 //? Core engine state initialization:
@@ -457,6 +472,48 @@ impl<G: GameApp> EngineState<G> {
             ],
         });
 
+        //? Create offscreen render target at internal resolution.
+        //? All game passes (noise + sprites) render here blitted to surface with nearest-neighbor.
+        let offscreen_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Offscreen Render Target"),
+            size: wgpu::Extent3d {
+                width: INTERNAL_WIDTH,
+                height: INTERNAL_HEIGHT,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: render_format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let offscreen_view = offscreen_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        //? Blit bind group: samples offscreen texture with nearest-neighbor filtering.
+        let blit_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let blit_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Blit Bind Group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&offscreen_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&blit_sampler),
+                },
+            ],
+        });
+
         //? Create the render pipeline for drawing the full-screen quad with the noise texture.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Fullscreen Shader"),
@@ -504,8 +561,10 @@ impl<G: GameApp> EngineState<G> {
         let egui_ctx = egui::Context::default();
 
         let mut visuals = egui::Visuals::dark();
-        visuals.window_fill = egui::Color32::from_gray(40);
+        visuals.window_fill = egui::Color32::from_rgba_unmultiplied(12, 12, 12, 255);
+        visuals.window_corner_radius = egui::CornerRadius::same(2);
         visuals.window_shadow = egui::Shadow::NONE;
+        visuals.panel_fill = egui::Color32::from_rgba_unmultiplied(12, 12, 12, 255);
         egui_ctx.set_visuals(visuals);
 
         let egui_state = egui_winit::State::new(
@@ -522,66 +581,56 @@ impl<G: GameApp> EngineState<G> {
             egui_wgpu::RendererOptions::default(),
         );
 
-        //? Create the camera and sprite renderer for the game.
+        //? Camera and context use the fixed internal resolution.
         let scale_factor = window.scale_factor();
-        let (game_w, game_h) = game_dimensions(size, scale_factor);
 
-        let camera = Camera::new(game_w, game_h);
+        let camera = Camera::new(INTERNAL_WIDTH as f32, INTERNAL_HEIGHT as f32);
         let sprite_renderer = SpriteRenderer::new(&device, &queue, render_format, &camera);
 
-        //? Load game textures from embedded bytes and create bind groups for them.
-        let idle_bytes = include_bytes!("../../game/assets/player/Knight(Idle).png");
-        let run_bytes = include_bytes!("../../game/assets/player/Knight(Run).png");
-        let jump_bytes = include_bytes!("../../game/assets/player/Knight(Jump).png");
-        let fall_bytes = include_bytes!("../../game/assets/player/Knight(Fall).png");
-        let attack_bytes = include_bytes!("../../game/assets/player/Knight(Attack).png");
-        let block_bytes = include_bytes!("../../game/assets/player/Knight(Block).png");
-        let roll_bytes = include_bytes!("../../game/assets/player/Knight(Roll).png");
+        //? Create the game instance, passing in a mutable reference to the context.
+        //? The game queues texture loads via ctx.load_texture() during init.
+        let mut context = Context::new(INTERNAL_WIDTH as f32, INTERNAL_HEIGHT as f32);
+        let game = G::init(&mut context);
 
-        let textures = vec![
-            crate::texture::Texture::from_bytes(&device, &queue, idle_bytes, Some("Knight Idle"))
-                .expect("Failed to load idle"),
-            crate::texture::Texture::from_bytes(&device, &queue, run_bytes, Some("Knight Run"))
-                .expect("Failed to load run"),
-            crate::texture::Texture::from_bytes(&device, &queue, jump_bytes, Some("Knight Jump"))
-                .expect("Failed to load jump"),
-            crate::texture::Texture::from_bytes(&device, &queue, fall_bytes, Some("Knight Fall"))
-                .expect("Failed to load fall"),
-            crate::texture::Texture::from_bytes(
-                &device,
-                &queue,
-                attack_bytes,
-                Some("Knight Attack"),
-            )
-            .expect("Failed to load attack"),
-            crate::texture::Texture::from_bytes(&device, &queue, block_bytes, Some("Knight Block"))
-                .expect("Failed to load block"),
-            crate::texture::Texture::from_bytes(&device, &queue, roll_bytes, Some("Knight Roll"))
-                .expect("Failed to load roll"),
-        ];
-
-        //? Create bind groups for each texture
-        //* Index 0: placeholder and reserved for white pixel in renderer.
-        //* Indices 1-7: game textures (idle, run, jump, fall, attack, block, roll)
+        //? Process textures queued by the game during init
         let mut texture_bind_groups = vec![];
         let mut texture_sizes = vec![];
 
-        texture_bind_groups.push(sprite_renderer.create_texture_bind_group(&device, &textures[0]));
-        texture_sizes.push((1.0, 1.0));
-        for texture in &textures {
-            let bind_group = sprite_renderer.create_texture_bind_group(&device, texture);
-            texture_bind_groups.push(bind_group);
-            texture_sizes.push((texture.width as f32, texture.height as f32));
+        //? Index 0: placeholder (white pixel fallback for bind group lookups)
+        {
+            let white_tex = crate::texture::Texture::white_pixel(&device, &queue);
+            texture_bind_groups
+                .push(sprite_renderer.create_texture_bind_group(&device, &white_tex));
+            texture_sizes.push((1.0, 1.0));
         }
 
-        //? Create the game instance, passing in a mutable reference to the context.
-        let mut context = Context::new(game_w, game_h);
-        let game = G::init(&mut context);
+        //? Load each texture the game requested and create bind groups
+        for pending in &context.pending_textures {
+            let texture = crate::texture::Texture::from_bytes(
+                &device,
+                &queue,
+                pending.bytes,
+                Some(&pending.label),
+            )
+            .unwrap_or_else(|e| panic!("Failed to load texture '{}': {e}", pending.label));
+
+            let bind_group = sprite_renderer.create_texture_bind_group(&device, &texture);
+            texture_sizes.push((texture.width as f32, texture.height as f32));
+            texture_bind_groups.push(bind_group);
+        }
+        context.pending_textures.clear();
 
         //? Initial noise bake to populate the texture before the first frame renders.
         let params = SceneParams::default();
         let mut pixel_buffer = vec![0u8; (SIM_WIDTH * SIM_HEIGHT * 4) as usize];
-        noise::render_scene_to_buffer(&mut pixel_buffer, SIM_WIDTH, SIM_HEIGHT, &params);
+        let mut perlin_cache = None;
+        noise::render_scene_to_buffer(
+            &mut pixel_buffer,
+            SIM_WIDTH,
+            SIM_HEIGHT,
+            &params,
+            &mut perlin_cache,
+        );
         upload_noise_texture(&queue, &noise_texture, &pixel_buffer);
 
         Self {
@@ -610,18 +659,17 @@ impl<G: GameApp> EngineState<G> {
             noise_dirty: false,
             scale_factor,
             render_format,
+            fixed_time: FixedTime::default(),
+            perlin_cache,
+            fps_samples: std::collections::VecDeque::with_capacity(120),
+            offscreen_texture,
+            offscreen_view,
+            blit_bind_group,
         }
     }
 
-    //? Resize handler: reconfigure the surface and update camera and sprite renderer with new dimensions.
-    //? Surface config always uses physical pixels. Camera and context use game_dimensions
-    //? (physical on native, logical/CSS on WASM) for a consistent coordinate system.
+    //? The blit pass handles scaling + letterboxing to the actual window size.
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        //? Prevent rendering at invalid dimensions (portrait/too narrow)
-        //? This avoids corruption when the CSS warning overlay is showing
-        const MIN_WIDTH: u32 = 320;
-        const MIN_HEIGHT: u32 = 240;
-
         if new_size.width < MIN_WIDTH || new_size.height < MIN_HEIGHT {
             return;
         }
@@ -630,37 +678,18 @@ impl<G: GameApp> EngineState<G> {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
-
             self.scale_factor = self.window.scale_factor();
-            let (game_w, game_h) = game_dimensions(new_size, self.scale_factor);
-
-            self.camera.resize(game_w, game_h);
-            self.sprite_renderer
-                .update_camera(&self.queue, &self.camera);
-            self.context.resize(game_w, game_h);
         }
     }
 
     //? Main render loop: handle input, update game, regenerate noise if needed, and draw the frame.
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let now = Instant::now();
-        let raw_dt = (now - self.last_frame).as_secs_f32();
+        let raw_dt = (now - self.last_frame).as_secs_f32().min(0.1); //* cap at 100ms to prevent spiral of death
         self.last_frame = now;
 
-        //? Hitstop: Freeze game time during impact
-        let dt = if self.context.hitstop_timer > 0.0 {
-            self.context.hitstop_timer -= raw_dt;
-            if self.context.hitstop_timer <= 0.0 {
-                self.context.hitstop_timer = 0.0;
-            }
-            //? Reduce delta_time to near-zero during hitstop (5% for subtle drift)
-            raw_dt * 0.05
-        } else {
-            raw_dt
-        };
-
         //? Rebuild action state from raw inputs at frame start
-        self.context.input.begin_frame(dt);
+        self.context.input.begin_frame(raw_dt);
 
         //? Build the egui UI and detect discrete changes to scene parameters (excluding time).
         let mut params = self.params.clone();
@@ -684,7 +713,7 @@ impl<G: GameApp> EngineState<G> {
 
         //? Advance fog animation time (separate from dirty-check)
         if self.params.fog_enabled && self.params.fog_anim_speed > 0.0 {
-            self.params.time += dt;
+            self.params.time += raw_dt;
         }
 
         if ui_changed {
@@ -701,6 +730,7 @@ impl<G: GameApp> EngineState<G> {
                 SIM_WIDTH,
                 SIM_HEIGHT,
                 &self.params,
+                &mut self.perlin_cache,
             );
             upload_noise_texture(&self.queue, &self.noise_texture, &self.pixel_buffer);
             self.prev_params = self.params.clone();
@@ -708,14 +738,51 @@ impl<G: GameApp> EngineState<G> {
             self.last_noise_regen = now;
         }
 
-        //? Update game logic and prepare sprites based on the current context and parameters.
-        self.context.delta_time = dt;
+        //? Sync tick rate if the game changed it via debug UI.
+        if self.context.fixed_tick_rate != self.fixed_time.tick_rate() {
+            self.fixed_time.set_tick_rate(self.context.fixed_tick_rate);
+        }
+
+        //? Apply pending freeze frames from game (hit-stop)
+        if self.context.freeze_frames > 0 {
+            self.fixed_time.freeze(self.context.freeze_frames);
+            self.context.freeze_frames = 0;
+        }
+
+        //? Fixed-timestep accumulator: run deterministic updates at FixedTime intervals
+        let steps = self.fixed_time.accumulate(raw_dt);
+        for _ in 0..steps {
+            self.context.delta_time = self.fixed_time.fixed_dt;
+            self.game.fixed_update(&mut self.context, &self.fixed_time);
+            self.fixed_time.advance();
+        }
+
+        self.context.interpolation_alpha = self.fixed_time.interpolation_alpha();
+
+        self.fps_samples.push_back(raw_dt);
+        if self.fps_samples.len() > 120 {
+            self.fps_samples.pop_front();
+        }
+        let avg_dt = self.fps_samples.iter().sum::<f32>() / self.fps_samples.len() as f32;
+        self.context.fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
+        self.context.frame_time_ms = avg_dt * 1000.0;
+
+        //? Per-frame update with visual dt (camera smoothing, interpolation, etc.)
+        self.context.delta_time = raw_dt;
         self.context.clear_sprites();
         self.game.update(&mut self.context);
         self.game.render(&mut self.context);
 
+        //? Apply pending screen shakes from game to camera
+        for &(intensity, duration) in &self.context.pending_shakes {
+            self.camera.add_shake(intensity, duration);
+        }
+        self.context.pending_shakes.clear();
+        self.camera.update_shakes(raw_dt);
+
         //? Update camera position based on context before rendering.
-        self.camera.set_offset(self.context.camera_offset_x);
+        self.camera
+            .set_offset(self.context.camera_offset_x, self.context.camera_offset_y);
         self.sprite_renderer
             .update_camera(&self.queue, &self.camera);
 
@@ -762,12 +829,12 @@ impl<G: GameApp> EngineState<G> {
             ..Default::default()
         });
 
-        //? Pass 1: full-screen quad with noise texture
+        //? Pass 1: full-screen quad with noise texture → offscreen buffer
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("World Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &self.offscreen_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -784,12 +851,12 @@ impl<G: GameApp> EngineState<G> {
             pass.draw(0..3, 0..1);
         }
 
-        //? Pass 2: sprite rendering
+        //? Pass 2: sprite rendering → offscreen buffer
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Sprite Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &self.offscreen_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -803,10 +870,48 @@ impl<G: GameApp> EngineState<G> {
             });
 
             self.sprite_renderer
-                .render_multi(&mut pass, &self.queue, &self.texture_bind_groups);
+                .render_multi(&mut pass, &self.texture_bind_groups);
         }
 
-        //? Pass 3: egui overlay
+        //? Pass 3: blit offscreen buffer → surface with nearest-neighbor + letterboxing
+        {
+            let sw = self.config.width as f32;
+            let sh = self.config.height as f32;
+            let target_aspect = INTERNAL_WIDTH as f32 / INTERNAL_HEIGHT as f32;
+            let window_aspect = sw / sh;
+
+            let (vp_w, vp_h) = if window_aspect > target_aspect {
+                //* Pillarbox: window is wider than 16:9
+                (sh * target_aspect, sh)
+            } else {
+                //* Letterbox: window is taller than 16:9
+                (sw, sw / target_aspect)
+            };
+            let vp_x = (sw - vp_w) / 2.0;
+            let vp_y = (sh - vp_h) / 2.0;
+
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Blit Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &self.blit_bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
+
+        //? Pass 4: egui overlay → surface (native resolution for crisp debug text)
         {
             let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("UI Pass"),
@@ -839,13 +944,28 @@ impl<G: GameApp> EngineState<G> {
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
+        //? Save the current state of tracked keys for the next frame's edge detection calculations.
+        self.context.input.end_frame();
+
+        //? Visual FPS limiter: sleep to cap frame rate if target_fps is set (native only)
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.context.target_fps > 0 {
+            let target_frame_time =
+                std::time::Duration::from_secs_f64(1.0 / self.context.target_fps as f64);
+            let elapsed = Instant::now() - now;
+            if elapsed < target_frame_time {
+                std::thread::sleep(target_frame_time - elapsed);
+            }
+        }
+
         Ok(())
     }
 }
 
 //? Additional Helpers
 
-//? Convert physical pixel size to game-logic dimensions.
+//? Convert physical pixel size to game-logic dimensions (unused with fixed internal resolution).
+#[allow(dead_code)]
 fn game_dimensions(physical: winit::dpi::PhysicalSize<u32>, scale_factor: f64) -> (f32, f32) {
     #[cfg(not(target_arch = "wasm32"))]
     {

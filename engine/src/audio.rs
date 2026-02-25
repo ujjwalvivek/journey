@@ -30,7 +30,7 @@ pub enum AudioTrack {
 
 //? One-shot audio event queued during `fixed_update` and drained once per frame.
 //? Game code pushes these into `Context::pending_audio`; the engine drains them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AudioEvent {
     Jump,
     Land,
@@ -215,12 +215,12 @@ impl AudioManager {
         self.active.current_ambience.is_some()
     }
 
-    //? Convert linear amplitude (0.0–1.0) to kira `Decibels`.
+    //? Convert linear amplitude (0.0-1.0) to kira `Decibels`.
     fn amplitude_to_db(amp: f64) -> kira::Decibels {
         if amp <= 0.0 {
             kira::Decibels::SILENCE
         } else {
-            kira::Decibels((20.0 * (amp as f32).log10()).max(-60.0))
+            kira::Decibels((20.0_f64 * amp.log10()).max(-60.0) as f32)
         }
     }
 

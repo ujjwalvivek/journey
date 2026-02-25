@@ -4,6 +4,7 @@
 *?  updates independently of the display framerate.
 *--------------------------------------------------------------------------------**/
 pub const DEFAULT_FIXED_HZ: u32 = 60;
+pub const MAX_STEPS: u32 = 5; //* Cap to prevent spiral of death on very slow frames.
 
 //? Fixed-timestep timing state.
 #[derive(Debug, Clone)]
@@ -38,7 +39,7 @@ impl FixedTime {
             return 0;
         }
         self.accumulator += dt;
-        (self.accumulator / self.fixed_dt) as u32
+        (self.accumulator / self.fixed_dt).min(MAX_STEPS as f32) as u32
     }
 
     //? Call this once per fixed_update invocation.

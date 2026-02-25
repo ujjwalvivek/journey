@@ -75,6 +75,11 @@ impl AABB {
 
     //? Compute the minimum translation vector (MTV) to push `mover` out of `obstacle`.
     //? Returns `None` if they don't overlap. Pushes along the smallest overlap axis.
+    //* When both axes have equal overlap, the Y axis wins (the `else` branch).
+    //* The default push direction for Y is upward (`sign = -1.0`) because in a
+    //* Y-down coordinate system this places entities on top of platforms rather
+    //* than pushing them through. This intentional directional bias is correct
+    //* for a platformer where landing on surfaces is the dominant collision case.
     pub fn resolve_collision(mover: &AABB, obstacle: &AABB) -> Option<Vec2> {
         let overlap = mover.get_overlap(obstacle);
         if overlap.x <= 0.0 || overlap.y <= 0.0 {
@@ -86,7 +91,7 @@ impl AABB {
             Some(Vec2::new(overlap.x * sign, 0.0))
         } else {
             let sign = (mover.center.y - obstacle.center.y).signum();
-            let sign = if sign == 0.0 { -1.0 } else { sign }; //* default push upward (Y-down)
+            let sign = if sign == 0.0 { -1.0 } else { sign };
             Some(Vec2::new(0.0, overlap.y * sign))
         }
     }

@@ -107,6 +107,30 @@ enum AudioMusicState {
 }
 
 impl JourneyGame {
+    fn open_level_editor(&mut self, return_state: MenuReturnState, ctx: &Context) {
+        self.state = GameState::LevelEditor { return_state };
+        let start_pos = self.player.position();
+        let level_floor_y = self.level.death_y_threshold - 100.0;
+        self.level_editor.toggle(
+            start_pos.x,
+            level_floor_y,
+            ctx.screen_width,
+            ctx.screen_height,
+        );
+    }
+
+    fn close_level_editor(&mut self, return_state: MenuReturnState) {
+        self.respawn_after_level_edit();
+        self.level_editor.active = false;
+        self.state = match return_state {
+            MenuReturnState::StartMenu => GameState::StartMenu {
+                animation_progress: 1.0,
+            },
+            MenuReturnState::Paused => GameState::Paused,
+            MenuReturnState::InGame => GameState::InGame,
+        };
+    }
+
     fn respawn_after_level_edit(&mut self) {
         self.player.entity.position = self.level.player_spawn;
         self.player.entity.velocity = engine::Vec2::ZERO;
@@ -353,12 +377,7 @@ impl GameApp for JourneyGame {
             &self.physics_config,
         );
 
-        //? Drain player-produced audio events into the shared pending queue.
-        for ev in self.player.pending_audio.drain(..) {
-            ctx.push_audio(ev);
-        }
-
-        //? An enter_death() here starts the normal death → respawn timer pipeline.
+        //? An enter_death() here starts the normal death -> respawn timer pipeline.
         if !self.player.is_dead && self.player.position().y > self.level.death_y_threshold {
             self.player.enter_death();
             self.death_respawn_timer = 60;
@@ -382,10 +401,6 @@ impl GameApp for JourneyGame {
                     enemy.bind_to_platform(&all_platform_aabbs);
                 }
                 self.projectiles = ProjectilePool::new();
-            }
-            //? Drain audio from death/respawn calls
-            for ev in self.player.pending_audio.drain(..) {
-                ctx.push_audio(ev);
             }
             return;
         }
@@ -563,7 +578,7 @@ impl GameApp for JourneyGame {
         }
         self.vfx_bursts.retain(|b| b.timer > 0);
 
-        //? Final drain: catch any audio events from late enter_death()/respawn() calls
+        //? Single drain point: collect all player-produced audio events at end of tick.
         for ev in self.player.pending_audio.drain(..) {
             ctx.push_audio(ev);
         }
@@ -585,15 +600,7 @@ impl GameApp for JourneyGame {
                     return;
                 }
                 GameState::LevelEditor { return_state } => {
-                    self.respawn_after_level_edit();
-                    self.level_editor.active = false;
-                    self.state = match return_state {
-                        MenuReturnState::StartMenu => GameState::StartMenu {
-                            animation_progress: 1.0,
-                        },
-                        MenuReturnState::Paused => GameState::Paused,
-                        MenuReturnState::InGame => GameState::InGame,
-                    };
+                    self.close_level_editor(return_state);
                     return;
                 }
                 GameState::Options { return_state, .. } => {
@@ -613,43 +620,15 @@ impl GameApp for JourneyGame {
         if ctx.input.is_key_just_pressed(engine::Key::F12) {
             match self.state {
                 GameState::InGame => {
-                    self.state = GameState::LevelEditor {
-                        return_state: MenuReturnState::InGame,
-                    };
-                    let start_pos = self.player.position();
-                    let level_floor_y = self.level.death_y_threshold - 100.0;
-                    self.level_editor.toggle(
-                        start_pos.x,
-                        level_floor_y,
-                        ctx.screen_width,
-                        ctx.screen_height,
-                    );
+                    self.open_level_editor(MenuReturnState::InGame, ctx);
                     return;
                 }
                 GameState::StartMenu { .. } => {
-                    self.state = GameState::LevelEditor {
-                        return_state: MenuReturnState::StartMenu,
-                    };
-                    let start_pos = self.player.position();
-                    let level_floor_y = self.level.death_y_threshold - 100.0;
-                    self.level_editor.toggle(
-                        start_pos.x,
-                        level_floor_y,
-                        ctx.screen_width,
-                        ctx.screen_height,
-                    );
+                    self.open_level_editor(MenuReturnState::StartMenu, ctx);
                     return;
                 }
                 GameState::LevelEditor { return_state } => {
-                    self.respawn_after_level_edit();
-                    self.level_editor.active = false;
-                    self.state = match return_state {
-                        MenuReturnState::StartMenu => GameState::StartMenu {
-                            animation_progress: 1.0,
-                        },
-                        MenuReturnState::Paused => GameState::Paused,
-                        MenuReturnState::InGame => GameState::InGame,
-                    };
+                    self.close_level_editor(return_state);
                     return;
                 }
                 _ => {}

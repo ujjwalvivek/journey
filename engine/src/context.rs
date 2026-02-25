@@ -175,7 +175,7 @@ impl Context {
             return;
         }
         //? Deduplicate: only fire each unique event once per frame
-        self.pending_audio.sort_unstable_by_key(|e| *e as u32);
+        self.pending_audio.sort_unstable();
         self.pending_audio.dedup();
         //* Events are dispatched by the game's audio handler via drain
         //* The game reads pending_audio after this sort+dedup

@@ -59,17 +59,12 @@ impl CombatInputBuffer {
     ) -> Option<MoveId> {
         self.expire(current_tick);
 
-        let mut found_idx = None;
-        for (i, buffered) in self.queue.iter().enumerate() {
-            if fsm::can_transition(state, buffered.action, move_db) {
-                found_idx = Some((i, buffered.action));
-                break;
-            }
-        }
-
-        if let Some((idx, move_id)) = found_idx {
-            self.queue.remove(idx);
-            Some(move_id)
+        if let Some(idx) = self
+            .queue
+            .iter()
+            .position(|b| fsm::can_transition(state, b.action, move_db))
+        {
+            Some(self.queue.remove(idx).unwrap().action)
         } else {
             None
         }

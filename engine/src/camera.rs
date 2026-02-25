@@ -4,6 +4,10 @@
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec2};
 
+//? Y-axis frequency multiplier: creates a Lissajous-like orbit that never
+//? repeats cleanly, giving screen shakes an organic, non-mechanical feel.
+const SHAKE_Y_FREQUENCY_RATIO: f32 = 1.3;
+
 //? Decaying sinusoidal screen shake triggered by impacts.
 #[derive(Debug, Clone)]
 pub struct ScreenShake {
@@ -34,7 +38,7 @@ impl ScreenShake {
         let envelope = self.intensity * (-self.decay * t).exp();
         Vec2::new(
             envelope * (self.frequency * t).sin(),
-            envelope * (self.frequency * t * 1.3).cos(),
+            envelope * (self.frequency * t * SHAKE_Y_FREQUENCY_RATIO).cos(),
         )
     }
 

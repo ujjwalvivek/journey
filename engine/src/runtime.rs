@@ -5,10 +5,10 @@
 *?  shared; only event-loop bootstrap and async GPU initialization differ.
 *--------------------------------------------------------------------------------**/
 use crate::GameApp;
+use crate::SceneParams;
 use crate::camera::Camera;
 use crate::context::Context;
 use crate::noise;
-use crate::scene::SceneParams;
 use crate::sprite::SpriteRenderer;
 use crate::time::FixedTime;
 use egui_wgpu::ScreenDescriptor;
@@ -99,13 +99,12 @@ impl<G: GameApp> ApplicationHandler for App<G> {
 
         #[cfg(not(target_arch = "wasm32"))]
         let attrs = WindowAttributes::default()
-            .with_title("Journey Engine")
-            .with_resizable(false)
-            .with_visible(false)
-            .with_fullscreen(Some(Fullscreen::Borderless(None)));
+            .with_title("Untitled Game - Journey Engine")
+            .with_resizable(true)
+            .with_visible(false);
 
         #[cfg(target_arch = "wasm32")]
-        let attrs = WindowAttributes::default().with_title("Journey Engine");
+        let attrs = WindowAttributes::default().with_title("Untitled Game - Journey Engine");
 
         let window = Arc::new(
             event_loop
@@ -124,8 +123,6 @@ impl<G: GameApp> ApplicationHandler for App<G> {
                     window.set_window_icon(Some(icon));
                 }
             }
-            window.set_decorations(false);
-            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
         }
 
         //? Native GPU init via pollster block_on, then show the window once ready
@@ -133,8 +130,8 @@ impl<G: GameApp> ApplicationHandler for App<G> {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let mut state = pollster::block_on(EngineState::new(window));
+            state.apply_display_mode();
             let _ = state.render();
-            state.window.set_maximized(true);
             state.window.set_visible(true);
             self.state = Some(state);
         }
@@ -208,6 +205,9 @@ impl<G: GameApp> ApplicationHandler for App<G> {
             WindowEvent::KeyboardInput {
                 event: key_event, ..
             } => {
+                if key_event.state == winit::event::ElementState::Pressed {
+                    state.context.audio.notify_user_gesture();
+                }
                 state.context.input.handle_key_event(key_event);
             }
             WindowEvent::MouseInput {
@@ -216,7 +216,13 @@ impl<G: GameApp> ApplicationHandler for App<G> {
                 ..
             } => {
                 let pressed = *button_state == winit::event::ElementState::Pressed;
+                if pressed {
+                    state.context.audio.notify_user_gesture();
+                }
                 state.context.input.handle_mouse_button(*button, pressed);
+            }
+            WindowEvent::Touch(_) => {
+                state.context.audio.notify_user_gesture();
             }
             _ => {}
         }
@@ -565,10 +571,10 @@ impl<G: GameApp> EngineState<G> {
         let egui_ctx = egui::Context::default();
 
         let mut visuals = egui::Visuals::dark();
-        visuals.window_fill = egui::Color32::from_rgba_unmultiplied(12, 12, 12, 255);
+        visuals.window_fill = egui::Color32::from_rgba_unmultiplied(40, 40, 43, 255);
         visuals.window_corner_radius = egui::CornerRadius::same(2);
         visuals.window_shadow = egui::Shadow::NONE;
-        visuals.panel_fill = egui::Color32::from_rgba_unmultiplied(12, 12, 12, 255);
+        visuals.panel_fill = egui::Color32::from_rgba_unmultiplied(40, 40, 43, 255);
         egui_ctx.set_visuals(visuals);
 
         let egui_state = egui_winit::State::new(
@@ -672,6 +678,50 @@ impl<G: GameApp> EngineState<G> {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn apply_display_mode(&mut self) {
+        if self.context.fullscreen_enabled {
+            self.window.set_decorations(false);
+            self.window.set_maximized(true);
+            if self.context.hdr_enabled {
+                self.window
+                    .set_fullscreen(Some(Fullscreen::Borderless(None)));
+            } else {
+                self.window.set_fullscreen(None);
+            }
+        } else {
+            self.window.set_fullscreen(None);
+            self.window.set_decorations(true);
+            self.window.set_maximized(false);
+            self.context.hdr_enabled = false;
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn apply_requested_display_changes(&mut self) {
+        let mut changed = false;
+
+        if let Some(fullscreen) = self.context.request_fullscreen.take() {
+            self.context.fullscreen_enabled = fullscreen;
+            if !fullscreen {
+                self.context.hdr_enabled = false;
+            }
+            changed = true;
+        }
+
+        if let Some(hdr) = self.context.request_hdr.take() {
+            self.context.hdr_enabled = hdr;
+            if hdr {
+                self.context.fullscreen_enabled = true;
+            }
+            changed = true;
+        }
+
+        if changed {
+            self.apply_display_mode();
+        }
+    }
+
     //? The blit pass handles scaling + letterboxing to the actual window size.
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width < MIN_WIDTH || new_size.height < MIN_HEIGHT {
@@ -702,6 +752,9 @@ impl<G: GameApp> EngineState<G> {
         let full_output = self.egui_ctx.run(raw_input, |egui_ctx| {
             self.game.ui(egui_ctx, ctx, &mut params);
         });
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.apply_requested_display_changes();
 
         let ui_changed = params.background_color != self.params.background_color
             || params.seed != self.params.seed
@@ -783,6 +836,9 @@ impl<G: GameApp> EngineState<G> {
         }
         self.context.pending_shakes.clear();
         self.camera.update_shakes(raw_dt);
+
+        //? Drain deduplicated audio events queued during fixed_update/update/ui
+        self.context.drain_audio_events();
 
         //? Update camera position based on context before rendering.
         self.camera

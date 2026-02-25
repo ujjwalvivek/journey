@@ -2,7 +2,7 @@
 *!  Start sequence for the game
 *----------------------------------------------------**/
 use crate::{GameState, JourneyGame, MenuReturnState, OptionsTab};
-use engine::Context;
+use engine::{AudioResponse, AudioTrack, Context};
 
 impl JourneyGame {
     pub(crate) fn show_splash_screen(&mut self, ctx: &egui::Context, timer: f32) {
@@ -14,16 +14,16 @@ impl JourneyGame {
             1.0
         };
         let color = egui::Color32::from_rgba_unmultiplied(
-            255,
-            255,
-            255,
+            40,
+            40,
+            43,
             (255.0 * alpha.clamp(0.95, 1.0)) as u8,
         );
 
         let ui_scale = (ctx.available_rect().height() / 1080.0).clamp(0.3, 1.0);
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
+            .frame(egui::Frame::NONE.fill(egui::Color32::from_rgb(223, 249, 251)))
             .show(ctx, |_| {});
 
         egui::Area::new(egui::Id::new("splash_center"))
@@ -64,7 +64,7 @@ impl JourneyGame {
         let ui_scale = (screen_rect.height() / 1080.0).clamp(0.3, 1.0);
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
+            .frame(egui::Frame::NONE.fill(egui::Color32::from_rgb(223, 249, 251)))
             .show(ctx, |_| {
                 let t = (animation_progress * std::f32::consts::PI / 2.0).sin();
 
@@ -76,10 +76,10 @@ impl JourneyGame {
                     .anchor(egui::Align2::CENTER_CENTER, [current_title_offset, 0.0])
                     .show(ctx, |ui| {
                         ui.heading(
-                            egui::RichText::new("Journey Engine")
+                            egui::RichText::new("Untitled Game")
                                 .size(64.0 * ui_scale)
                                 .strong()
-                                .color(egui::Color32::WHITE),
+                                .color(egui::Color32::from_rgb(40, 40, 43)),
                         );
                     });
 
@@ -114,6 +114,7 @@ impl JourneyGame {
                                                 .color(btn_color),
                                         ),
                                     )
+                                    .with_ui_sound(&mut engine_ctx.pending_audio)
                                     .clicked()
                                 {
                                     self.state = GameState::InGame;
@@ -129,6 +130,7 @@ impl JourneyGame {
                                                 .color(btn_color),
                                         ),
                                     )
+                                    .with_ui_sound(&mut engine_ctx.pending_audio)
                                     .clicked()
                                 {
                                     self.state = GameState::LevelEditor {
@@ -154,6 +156,7 @@ impl JourneyGame {
                                                 .color(btn_color),
                                         ),
                                     )
+                                    .with_ui_sound(&mut engine_ctx.pending_audio)
                                     .clicked()
                                 {
                                     self.state = GameState::Options {
@@ -173,6 +176,7 @@ impl JourneyGame {
                                                 .color(btn_color),
                                         ),
                                     )
+                                    .with_ui_sound(&mut engine_ctx.pending_audio)
                                     .clicked()
                                 {
                                     engine_ctx.request_exit = true;
@@ -187,7 +191,7 @@ impl JourneyGame {
         let ui_scale = (ctx.available_rect().height() / 1080.0).clamp(0.3, 1.0);
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(egui::Color32::from_black_alpha(255)))
+            .frame(egui::Frame::NONE.fill(egui::Color32::from_rgb(223, 249, 251)))
             .show(ctx, |ui| {
                 ui.centered_and_justified(|ui| {
                     ui.vertical_centered(|ui| {
@@ -196,7 +200,7 @@ impl JourneyGame {
                             egui::RichText::new("Game Paused")
                                 .size(48.0 * ui_scale)
                                 .strong()
-                                .color(egui::Color32::WHITE),
+                                .color(egui::Color32::from_rgb(40, 40, 43)),
                         );
                         ui.add_space(40.0 * ui_scale);
 
@@ -208,6 +212,7 @@ impl JourneyGame {
                                     egui::RichText::new("Continue Game").size(24.0 * ui_scale),
                                 ),
                             )
+                            .with_ui_sound(&mut engine_ctx.pending_audio)
                             .clicked()
                         {
                             self.state = GameState::InGame;
@@ -221,6 +226,7 @@ impl JourneyGame {
                                     egui::RichText::new("Options").size(24.0 * ui_scale),
                                 ),
                             )
+                            .with_ui_sound(&mut engine_ctx.pending_audio)
                             .clicked()
                         {
                             self.state = GameState::Options {
@@ -237,6 +243,7 @@ impl JourneyGame {
                                     egui::RichText::new("Level Editor").size(24.0 * ui_scale),
                                 ),
                             )
+                            .with_ui_sound(&mut engine_ctx.pending_audio)
                             .clicked()
                         {
                             let start_pos = self.player.position();
@@ -261,6 +268,7 @@ impl JourneyGame {
                                     egui::RichText::new("Main Menu").size(24.0 * ui_scale),
                                 ),
                             )
+                            .with_ui_sound(&mut engine_ctx.pending_audio)
                             .clicked()
                         {
                             //? Reset player state and anything needed for a clean reload
@@ -276,7 +284,8 @@ impl JourneyGame {
     pub(crate) fn show_options_menu(
         &mut self,
         ctx: &egui::Context,
-        params: &mut engine::scene::SceneParams,
+        engine_ctx: &mut Context,
+        params: &mut engine::SceneParams,
         return_state: MenuReturnState,
         current_tab: OptionsTab,
     ) {
@@ -284,7 +293,7 @@ impl JourneyGame {
         let ui_scale = (ctx.available_rect().height() / 1080.0).clamp(0.3, 1.0);
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(egui::Color32::from_black_alpha(255)))
+            .frame(egui::Frame::NONE.fill(egui::Color32::from_rgb(40, 40, 43)))
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(20.0 * ui_scale);
@@ -298,13 +307,18 @@ impl JourneyGame {
                     ui.horizontal(|ui| {
                         //? Dummy space to center tabs
                         ui.add_space(ui.available_width() / 2.0 - 150.0);
-                        ui.selectable_value(&mut new_tab, OptionsTab::Graphics, "Graphics");
+                        ui.selectable_value(&mut new_tab, OptionsTab::Graphics, "Graphics")
+                            .with_tab_sound(&mut engine_ctx.pending_audio);
                         ui.selectable_value(
                             &mut new_tab,
                             OptionsTab::Physics,
                             "Gameplay & Physics",
-                        );
-                        ui.selectable_value(&mut new_tab, OptionsTab::Controls, "Controls");
+                        )
+                        .with_tab_sound(&mut engine_ctx.pending_audio);
+                        ui.selectable_value(&mut new_tab, OptionsTab::Controls, "Controls")
+                            .with_tab_sound(&mut engine_ctx.pending_audio);
+                        ui.selectable_value(&mut new_tab, OptionsTab::Audio, "Audio")
+                            .with_tab_sound(&mut engine_ctx.pending_audio);
                     });
                     ui.separator();
                 });
@@ -320,6 +334,7 @@ impl JourneyGame {
                                         egui::RichText::new("Back").size(20.0 * ui_scale),
                                     ),
                                 )
+                                .with_ui_sound(&mut engine_ctx.pending_audio)
                                 .clicked()
                             {
                                 self.state = match return_state {
@@ -354,6 +369,64 @@ impl JourneyGame {
                                                 ui.vertical_centered(|ui| {
                                                     ui.heading("Graphics Settings");
                                                     ui.add_space(10.0);
+                                                    #[cfg(not(target_arch = "wasm32"))]
+                                                    {
+                                                        ui.group(|ui| {
+                                                            ui.heading("Display");
+
+                                                            let mut fullscreen =
+                                                                engine_ctx.fullscreen_enabled;
+                                                            let fullscreen_resp = ui.checkbox(
+                                                                &mut fullscreen,
+                                                                "Fullscreen",
+                                                            );
+                                                            let fullscreen_changed =
+                                                                fullscreen_resp.changed();
+                                                            fullscreen_resp.with_checkbox_sound(
+                                                                fullscreen,
+                                                                &mut engine_ctx.pending_audio,
+                                                            );
+                                                            if fullscreen_changed {
+                                                                engine_ctx
+                                                                    .set_fullscreen_enabled(fullscreen);
+                                                            }
+
+                                                            let mut hdr = engine_ctx.hdr_enabled;
+                                                            let hdr_resp = ui.add_enabled(
+                                                                fullscreen,
+                                                                egui::Checkbox::new(
+                                                                    &mut hdr,
+                                                                    "HDR Output (Optional)",
+                                                                ),
+                                                            );
+                                                            let hdr_changed = hdr_resp.changed();
+                                                            hdr_resp.with_checkbox_sound(
+                                                                hdr,
+                                                                &mut engine_ctx.pending_audio,
+                                                            );
+                                                            if hdr_changed {
+                                                                engine_ctx.set_hdr_enabled(hdr);
+                                                            }
+
+                                                            if !fullscreen {
+                                                                ui.label(
+                                                                    egui::RichText::new(
+                                                                        "HDR is available only in fullscreen mode.",
+                                                                    )
+                                                                    .small(),
+                                                                );
+                                                            }
+
+                                                            ui.label(
+                                                                egui::RichText::new(
+                                                                    "Default: Fullscreen ON, HDR OFF",
+                                                                )
+                                                                .small()
+                                                                .italics(),
+                                                            );
+                                                        });
+                                                        ui.add_space(10.0);
+                                                    }
                                                     ui.horizontal(|ui| {
                                                         ui.label("Background Color:");
                                                         ui.color_edit_button_rgb(
@@ -361,10 +434,16 @@ impl JourneyGame {
                                                         );
                                                     });
                                                     ui.add_space(10.0);
-                                                    ui.checkbox(
-                                                        &mut params.fog_enabled,
-                                                        "Enable Fog Details",
-                                                    );
+                                                    {
+                                                        let r = ui.checkbox(
+                                                            &mut params.fog_enabled,
+                                                            "Enable Fog Details",
+                                                        );
+                                                        r.with_checkbox_sound(
+                                                            params.fog_enabled,
+                                                            &mut engine_ctx.pending_audio,
+                                                        );
+                                                    }
                                                     if params.fog_enabled {
                                                         ui.horizontal(|ui| {
                                                             ui.label("Fog Color:");
@@ -410,10 +489,16 @@ impl JourneyGame {
                                                 ui.vertical_centered(|ui| {
                                                     ui.heading("Gameplay Tweaks");
                                                     ui.add_space(10.0);
-                                                    ui.checkbox(
-                                                        &mut self.show_physics_tuner_in_game,
-                                                        "Show Physics Tuner In-Game",
-                                                    );
+                                                    {
+                                                        let r = ui.checkbox(
+                                                            &mut self.show_physics_tuner_in_game,
+                                                            "Show Physics Tuner In-Game",
+                                                        );
+                                                        r.with_checkbox_sound(
+                                                            self.show_physics_tuner_in_game,
+                                                            &mut engine_ctx.pending_audio,
+                                                        );
+                                                    }
                                                     ui.add_space(20.0);
                                                 });
 
@@ -435,6 +520,116 @@ impl JourneyGame {
                                                     ui.heading("Keyboard Bindings");
                                                     ui.add_space(10.0);
                                                     crate::scene::controls_ui(ui, false);
+                                                });
+                                            });
+                                        }
+                                        OptionsTab::Audio => {
+                                            ui.group(|ui| {
+                                                ui.set_width(ui.available_width());
+                                                ui.vertical_centered(|ui| {
+                                                    ui.heading("Audio Settings");
+                                                    ui.add_space(10.0);
+
+                                                    let mut master =
+                                                        engine_ctx.audio.master_volume() as f32;
+                                                    if ui
+                                                        .add(
+                                                            egui::Slider::new(
+                                                                &mut master,
+                                                                0.0..=1.0,
+                                                            )
+                                                            .text("Master Volume"),
+                                                        )
+                                                        .changed()
+                                                    {
+                                                        engine_ctx
+                                                            .audio
+                                                            .set_master_volume(master as f64);
+                                                        let mv = engine_ctx
+                                                            .audio
+                                                            .effective_volume(AudioTrack::Music);
+                                                        let av = engine_ctx
+                                                            .audio
+                                                            .effective_volume(AudioTrack::Ambience);
+                                                        engine_ctx
+                                                            .audio
+                                                            .set_music_live_volume(mv, 0.1);
+                                                        engine_ctx
+                                                            .audio
+                                                            .set_ambience_live_volume(av, 0.1);
+                                                    }
+
+                                                    let mut music =
+                                                        engine_ctx.audio.music_volume() as f32;
+                                                    if ui
+                                                        .add(
+                                                            egui::Slider::new(
+                                                                &mut music,
+                                                                0.0..=1.0,
+                                                            )
+                                                            .text("Music Volume"),
+                                                        )
+                                                        .changed()
+                                                    {
+                                                        engine_ctx
+                                                            .audio
+                                                            .set_music_volume(music as f64);
+                                                        let mv = engine_ctx
+                                                            .audio
+                                                            .effective_volume(AudioTrack::Music);
+                                                        engine_ctx
+                                                            .audio
+                                                            .set_music_live_volume(mv, 0.1);
+                                                    }
+
+                                                    let mut amb =
+                                                        engine_ctx.audio.ambience_volume() as f32;
+                                                    if ui
+                                                        .add(
+                                                            egui::Slider::new(&mut amb, 0.0..=1.0)
+                                                                .text("Ambience Volume"),
+                                                        )
+                                                        .changed()
+                                                    {
+                                                        engine_ctx
+                                                            .audio
+                                                            .set_ambience_volume(amb as f64);
+                                                        let av = engine_ctx
+                                                            .audio
+                                                            .effective_volume(AudioTrack::Ambience);
+                                                        engine_ctx
+                                                            .audio
+                                                            .set_ambience_live_volume(av, 0.1);
+                                                    }
+
+                                                    let mut sfx =
+                                                        engine_ctx.audio.sfx_volume() as f32;
+                                                    if ui
+                                                        .add(
+                                                            egui::Slider::new(&mut sfx, 0.0..=1.0)
+                                                                .text("SFX Volume"),
+                                                        )
+                                                        .changed()
+                                                    {
+                                                        engine_ctx.audio.set_sfx_volume(sfx as f64);
+                                                    }
+
+                                                    let mut ui_vol =
+                                                        engine_ctx.audio.ui_volume() as f32;
+                                                    if ui
+                                                        .add(
+                                                            egui::Slider::new(
+                                                                &mut ui_vol,
+                                                                0.0..=1.0,
+                                                            )
+                                                            .text("UI Volume"),
+                                                        )
+                                                        .changed()
+                                                    {
+                                                        engine_ctx
+                                                            .audio
+                                                            .set_ui_volume(ui_vol as f64);
+                                                    }
                                                 });
                                             });
                                         }

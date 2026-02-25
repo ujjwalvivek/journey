@@ -3,6 +3,7 @@
 *--------------------------------------------------------------------------------**/
 pub mod anim;
 pub mod assets;
+pub mod audio;
 pub mod combat;
 pub mod config;
 pub mod enemy;
@@ -12,9 +13,10 @@ pub mod level_editor;
 pub mod player;
 pub mod projectile;
 use assets::PlayerAnimations;
+use audio::AudioAssets;
 use config::PhysicsConfig;
 use enemy::Enemy;
-use engine::{Context, FixedTime, GameApp};
+use engine::{AudioEvent, Context, FixedTime, GameApp};
 use level::Level;
 use level_editor::LevelEditor;
 use player::Player;
@@ -43,6 +45,7 @@ pub enum OptionsTab {
     Graphics,
     Physics,
     Controls,
+    Audio,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -90,6 +93,17 @@ pub struct JourneyGame {
     using_gamepad: bool,
     pub state: GameState,
     pub show_physics_tuner_in_game: bool,
+    audio_assets: AudioAssets,
+    audio_music_state: AudioMusicState,
+    audio_options_ducked: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AudioMusicState {
+    None,
+    StartScreen,
+    LevelEditor,
+    InGame,
 }
 
 impl JourneyGame {
@@ -97,7 +111,10 @@ impl JourneyGame {
         self.player.entity.position = self.level.player_spawn;
         self.player.entity.velocity = engine::Vec2::ZERO;
         self.camera_x = (self.level.player_spawn.x - self.initial_screen_height / 2.0).max(0.0);
-        self.camera_y = (self.level.player_spawn.y - self.initial_screen_height / 2.0).max(0.0);
+        self.camera_y = self.level.clamp_camera_y(
+            self.level.player_spawn.y - self.initial_screen_height / 2.0,
+            self.initial_screen_height,
+        );
         let all_platform_aabbs: Vec<_> = self.level.platforms.iter().map(|p| p.aabb).collect();
         let mut enemies: Vec<Enemy> = self
             .level
@@ -109,6 +126,107 @@ impl JourneyGame {
             enemy.bind_to_platform(&all_platform_aabbs);
         }
         self.enemies = enemies;
+    }
+
+    fn update_music_state(&mut self, ctx: &mut Context) {
+        let desired = match self.state {
+            GameState::Splash { .. } => AudioMusicState::None,
+            GameState::StartMenu { .. }
+            | GameState::Options {
+                return_state: MenuReturnState::StartMenu,
+                ..
+            } => AudioMusicState::StartScreen,
+            GameState::LevelEditor { .. } => AudioMusicState::LevelEditor,
+            GameState::InGame | GameState::Paused | GameState::Options { .. } => {
+                AudioMusicState::InGame
+            }
+        };
+
+        if desired != self.audio_music_state {
+            match desired {
+                AudioMusicState::None => {
+                    ctx.audio.stop_music(1.0);
+                    ctx.audio.stop_ambience(1.0);
+                }
+                AudioMusicState::StartScreen => {
+                    if let Some(ref data) = self.audio_assets.start_audio {
+                        ctx.audio.play_music(data, 1.0);
+                    }
+                    ctx.audio.stop_ambience(1.0);
+                }
+                AudioMusicState::LevelEditor => {
+                    if let Some(ref data) = self.audio_assets.ui_level_editor {
+                        ctx.audio.play_music(data, 1.0);
+                    }
+                    ctx.audio.stop_ambience(0.5);
+                }
+                AudioMusicState::InGame => {
+                    if let Some(ref data) = self.audio_assets.bg_music {
+                        ctx.audio.play_music(data, 1.0);
+                    }
+                    if let Some(ref data) = self.audio_assets.ambient_audio {
+                        ctx.audio.play_ambience(data, 1.0);
+                    }
+                }
+            }
+            self.audio_music_state = desired;
+            self.audio_options_ducked = false;
+        }
+
+        //? WASM autoplay unlock recovery:
+        //* State may already match `desired` while no loop is active. Re-attempt the desired loops.
+        match desired {
+            AudioMusicState::None => {}
+            AudioMusicState::StartScreen => {
+                if !ctx.audio.has_active_music()
+                    && let Some(ref data) = self.audio_assets.start_audio
+                {
+                    ctx.audio.play_music(data, 0.25);
+                }
+            }
+            AudioMusicState::LevelEditor => {
+                if !ctx.audio.has_active_music()
+                    && let Some(ref data) = self.audio_assets.ui_level_editor
+                {
+                    ctx.audio.play_music(data, 0.25);
+                }
+            }
+            AudioMusicState::InGame => {
+                if !ctx.audio.has_active_music()
+                    && let Some(ref data) = self.audio_assets.bg_music
+                {
+                    ctx.audio.play_music(data, 0.25);
+                }
+                if !ctx.audio.has_active_ambience()
+                    && let Some(ref data) = self.audio_assets.ambient_audio
+                {
+                    ctx.audio.play_ambience(data, 0.25);
+                }
+            }
+        }
+
+        //? Duck/unduck music when the Options menu opens or closes.
+        let options_open = matches!(self.state, GameState::Options { .. });
+        if options_open != self.audio_options_ducked {
+            if options_open {
+                let mv = ctx.audio.effective_volume(engine::AudioTrack::Music) * 0.3;
+                let av = ctx.audio.effective_volume(engine::AudioTrack::Ambience) * 0.3;
+                ctx.audio.set_music_live_volume(mv, 0.4);
+                ctx.audio.set_ambience_live_volume(av, 0.4);
+            } else {
+                let mv = ctx.audio.effective_volume(engine::AudioTrack::Music);
+                let av = ctx.audio.effective_volume(engine::AudioTrack::Ambience);
+                ctx.audio.set_music_live_volume(mv, 0.4);
+                ctx.audio.set_ambience_live_volume(av, 0.4);
+            }
+            self.audio_options_ducked = options_open;
+        }
+    }
+
+    fn dispatch_pending_audio(&mut self, ctx: &mut Context) {
+        for event in ctx.pending_audio.drain(..) {
+            self.audio_assets.dispatch(event, &mut ctx.audio);
+        }
     }
 }
 
@@ -143,7 +261,8 @@ impl GameApp for JourneyGame {
 
         //? Derive initial camera position directly from spawn so there is no lerp on frame 1.
         let init_camera_x = (start_pos.x - ctx.screen_width / 2.0).max(0.0);
-        let init_camera_y = (start_pos.y - ctx.screen_height / 2.0).max(0.0);
+        let init_camera_y =
+            level.clamp_camera_y(start_pos.y - ctx.screen_height / 2.0, ctx.screen_height);
 
         Self {
             player,
@@ -170,6 +289,9 @@ impl GameApp for JourneyGame {
             using_gamepad: false,
             state: GameState::Splash { timer: 3.0 },
             show_physics_tuner_in_game: false,
+            audio_assets: AudioAssets::load(),
+            audio_music_state: AudioMusicState::None,
+            audio_options_ducked: false,
         }
     }
 
@@ -231,6 +353,11 @@ impl GameApp for JourneyGame {
             &self.physics_config,
         );
 
+        //? Drain player-produced audio events into the shared pending queue.
+        for ev in self.player.pending_audio.drain(..) {
+            ctx.push_audio(ev);
+        }
+
         //? An enter_death() here starts the normal death → respawn timer pipeline.
         if !self.player.is_dead && self.player.position().y > self.level.death_y_threshold {
             self.player.enter_death();
@@ -255,6 +382,10 @@ impl GameApp for JourneyGame {
                     enemy.bind_to_platform(&all_platform_aabbs);
                 }
                 self.projectiles = ProjectilePool::new();
+            }
+            //? Drain audio from death/respawn calls
+            for ev in self.player.pending_audio.drain(..) {
+                ctx.push_audio(ev);
             }
             return;
         }
@@ -354,6 +485,7 @@ impl GameApp for JourneyGame {
             ) {
                 self.projectiles
                     .spawn(shoot.origin, shoot.target, idx, shoot.speed, shoot.color);
+                ctx.push_audio(AudioEvent::Projectile);
             }
         }
 
@@ -376,6 +508,7 @@ impl GameApp for JourneyGame {
                 ctx.trigger_freeze(event.freeze_frames);
                 ctx.trigger_shake(event.shake_intensity, 0.15);
                 self.player.enter_hitstop(config::HITSTOP_KILL_TICKS);
+                ctx.push_audio(AudioEvent::Hit);
                 break;
             }
         }
@@ -403,13 +536,18 @@ impl GameApp for JourneyGame {
         }
 
         self.projectiles.update_all(ctx.delta_time);
-        self.projectiles.collide_walls(&solid_aabbs);
+        let bounce_count = self.projectiles.collide_walls(&solid_aabbs);
+        for _ in 0..bounce_count {
+            ctx.push_audio(AudioEvent::ProjectileBounce);
+        }
         if let Some(source_idx) = self.projectiles.check_parry_deflect(&self.player.entity) {
             if let Some(enemy) = self.enemies.get_mut(source_idx) {
                 enemy.enter_stagger();
             }
             ctx.trigger_freeze(5);
             ctx.trigger_shake(3.0, 0.1);
+            ctx.push_audio(AudioEvent::Parry);
+            ctx.push_audio(AudioEvent::Stagger);
         }
 
         if self.projectiles.check_player_hit(&self.player.entity)
@@ -424,9 +562,17 @@ impl GameApp for JourneyGame {
             burst.timer = burst.timer.saturating_sub(1);
         }
         self.vfx_bursts.retain(|b| b.timer > 0);
+
+        //? Final drain: catch any audio events from late enter_death()/respawn() calls
+        for ev in self.player.pending_audio.drain(..) {
+            ctx.push_audio(ev);
+        }
     }
 
     fn update(&mut self, ctx: &mut Context) {
+        self.update_music_state(ctx); //* Manage music/ambience transitions based on game state
+        self.dispatch_pending_audio(ctx); //* Dispatch any pending SFX events from this frame
+
         //? Global Input Handling (Escape, F12)
         if ctx.input.is_key_just_pressed(engine::Key::Escape) {
             match self.state {
@@ -565,7 +711,9 @@ impl GameApp for JourneyGame {
                 let correct_spawn = self.level.player_spawn;
                 self.player.set_position(correct_spawn);
                 self.camera_x = (correct_spawn.x - ctx.screen_width / 2.0).max(0.0);
-                self.camera_y = (correct_spawn.y - ctx.screen_height / 2.0).max(0.0);
+                self.camera_y = self
+                    .level
+                    .clamp_camera_y(correct_spawn.y - ctx.screen_height / 2.0, ctx.screen_height);
                 self.initial_screen_height = ctx.screen_height;
                 self.screen_initialized = true;
             } else if self.init_frame_count > 10 {
@@ -623,12 +771,8 @@ impl GameApp for JourneyGame {
             self.camera_x = target_camera_x;
         }
 
-        //? death_y_threshold = lowest platform bottom + 50, so the actual floor
-        //? bottom is threshold - 50.  Camera bottom = camera_y + screen_height.
-        let level_floor_y = self.level.death_y_threshold - 50.0;
-        let camera_y_max = (level_floor_y - ctx.screen_height).max(0.0);
         self.camera_x = self.camera_x.max(0.0);
-        self.camera_y = self.camera_y.max(0.0).min(camera_y_max);
+        self.camera_y = self.level.clamp_camera_y(self.camera_y, ctx.screen_height);
 
         //? Pixel-snap camera offsets to prevent sub-pixel jitter in the renderer
         ctx.camera_offset_x = self.camera_x.round();
@@ -866,7 +1010,7 @@ impl GameApp for JourneyGame {
         &mut self,
         ctx: &egui::Context,
         engine_ctx: &mut Context,
-        params: &mut engine::scene::SceneParams,
+        params: &mut engine::SceneParams,
     ) {
         match self.state {
             GameState::Splash { timer } => {
@@ -880,35 +1024,20 @@ impl GameApp for JourneyGame {
                 ref tab,
             } => {
                 let current_tab = tab.clone();
-                self.show_options_menu(ctx, params, return_state, current_tab);
+                self.show_options_menu(ctx, engine_ctx, params, return_state, current_tab);
             }
             GameState::Paused => {
                 self.show_paused_menu(ctx, engine_ctx);
             }
-            GameState::LevelEditor { return_state } => {
+            GameState::LevelEditor { .. } => {
                 self.level_editor.show_ui(
                     ctx,
                     params,
                     &mut self.level,
                     self.initial_screen_height,
                     self.initial_screen_height,
+                    &mut engine_ctx.pending_audio,
                 );
-                //? Add an exit button for the level editor in its state
-                egui::Area::new(egui::Id::new("level_editor_exit"))
-                    .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 20.0))
-                    .show(ctx, |ui| {
-                        if ui.button("Exit Level Editor").clicked() {
-                            self.respawn_after_level_edit();
-                            self.level_editor.active = false;
-                            self.state = match return_state {
-                                MenuReturnState::StartMenu => GameState::StartMenu {
-                                    animation_progress: 1.0,
-                                },
-                                MenuReturnState::Paused => GameState::Paused,
-                                MenuReturnState::InGame => GameState::InGame,
-                            };
-                        }
-                    });
             }
             GameState::InGame => {
                 crate::scene::show_ui(crate::scene::DebugUiParams {
@@ -937,6 +1066,7 @@ impl GameApp for JourneyGame {
                     physics_config: &mut self.physics_config,
                     using_gamepad: self.using_gamepad,
                     show_physics_tuner_in_game: self.show_physics_tuner_in_game,
+                    pending_audio: &mut engine_ctx.pending_audio,
                 });
             }
         }

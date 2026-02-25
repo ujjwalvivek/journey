@@ -3,7 +3,7 @@
 *?  Contains the Perlin fog pipeline used by the engine render loop.
 *?  [`render_scene_to_buffer`] is the zero-allocation variant called each frame.
 *--------------------------------------------------------------------------------**/
-use crate::scene::SceneParams;
+use crate::SceneParams;
 use noise::{NoiseFn, Perlin};
 
 //? Convert a hex color string input to an RGB tuple.

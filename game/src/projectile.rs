@@ -122,7 +122,9 @@ impl ProjectilePool {
 
     //? Collide projectiles with solid walls/floors (NOT one-way platforms).
     //? On first contact the bullet ricochets (reflects velocity); on second it despawns.
-    pub fn collide_walls(&mut self, walls: &[AABB]) {
+    //? Returns the number of ricochets that occurred (for audio).
+    pub fn collide_walls(&mut self, walls: &[AABB]) -> u32 {
+        let mut bounce_count = 0u32;
         for proj in &mut self.projectiles {
             if !proj.alive {
                 continue;
@@ -150,11 +152,13 @@ impl ProjectilePool {
                         //? Nudge out of the wall to prevent double-bounce
                         proj.position += proj.velocity * (1.0 / 60.0);
                         proj.bounces += 1;
+                        bounce_count += 1;
                     }
                     break;
                 }
             }
         }
+        bounce_count
     }
 
     pub fn check_player_hit(&mut self, player: &Entity) -> bool {

@@ -47,6 +47,7 @@ pub struct Level {
     pub player_spawn: Vec2,
     pub enemy_spawns: Vec<(Vec2, EnemyType)>,
     pub exit_spawn: Vec2,
+    pub ceiling_y_threshold: f32,
     pub death_y_threshold: f32,
 }
 
@@ -77,6 +78,7 @@ impl Level {
             player_spawn: Vec2::new(100.0, 100.0),
             enemy_spawns: Vec::new(),
             exit_spawn: Vec2::new(0.0, 0.0),
+            ceiling_y_threshold: 0.0,
             screen_height,
             death_y_threshold: 0.0,
         };
@@ -137,13 +139,25 @@ impl Level {
             }
         }
 
-        //? Death threshold: 50px below the lowest platform bottom edge.
-        self.death_y_threshold = self
-            .platforms
-            .iter()
-            .map(|p| p.aabb.center.y + p.aabb.size.y * 0.5)
-            .fold(f32::NEG_INFINITY, f32::max)
-            + 50.0;
+        //? Vertical bounds used by camera clamping.
+        //? ceiling_y_threshold = highest platform top edge.
+        //? death_y_threshold = 50px below the lowest platform bottom edge.
+        if self.platforms.is_empty() {
+            self.ceiling_y_threshold = 0.0;
+            self.death_y_threshold = screen_height + 50.0;
+        } else {
+            self.ceiling_y_threshold = self
+                .platforms
+                .iter()
+                .map(|p| p.aabb.center.y - p.aabb.size.y * 0.5)
+                .fold(f32::INFINITY, f32::min);
+            self.death_y_threshold = self
+                .platforms
+                .iter()
+                .map(|p| p.aabb.center.y + p.aabb.size.y * 0.5)
+                .fold(f32::NEG_INFINITY, f32::max)
+                + 50.0;
+        }
 
         self.screen_height = screen_height;
     }
@@ -163,6 +177,7 @@ impl Level {
             for spawn in &mut self.enemy_spawns {
                 spawn.0.y += dy;
             }
+            self.ceiling_y_threshold += dy;
             self.death_y_threshold += dy;
             self.screen_height = screen_height;
 
@@ -173,9 +188,9 @@ impl Level {
 
     pub fn platform_color(platform_type: PlatformType) -> [f32; 4] {
         match platform_type {
-            PlatformType::Floor | PlatformType::Crate => [0.0, 0.0, 0.0, 1.0],
-            PlatformType::Wall => [0.2, 0.2, 0.2, 1.0],
-            PlatformType::OneWay => [0.4, 0.4, 0.6, 0.8],
+            PlatformType::Floor | PlatformType::Crate => [0.156, 0.156, 0.168, 1.0], //* rgb(40, 40, 43)
+            PlatformType::Wall => [0.156, 0.156, 0.168, 1.0], //* rgb(40, 40, 43)
+            PlatformType::OneWay => [0.44, 0.34, 0.89, 1.0],  //* rgb(113, 88, 226)
         }
     }
 
@@ -204,6 +219,24 @@ impl Level {
             .filter(|p| p.platform_type == PlatformType::OneWay)
             .map(|p| p.aabb)
             .collect()
+    }
+
+    pub fn camera_y_bounds(&self, screen_height: f32) -> (f32, f32) {
+        let camera_y_min = self.ceiling_y_threshold;
+        let level_floor_y = self.death_y_threshold - 50.0;
+        let camera_y_max = level_floor_y - screen_height;
+        (camera_y_min, camera_y_max)
+    }
+
+    //? Clamp camera_y to level vertical bounds, supporting negative camera offsets
+    //? for tall maps whose top extends above y=0.
+    pub fn clamp_camera_y(&self, camera_y: f32, screen_height: f32) -> f32 {
+        let (camera_y_min, camera_y_max) = self.camera_y_bounds(screen_height);
+        if camera_y_min <= camera_y_max {
+            camera_y.clamp(camera_y_min, camera_y_max)
+        } else {
+            camera_y_min
+        }
     }
 
     //? Find the nearest grapple node within range of a position.

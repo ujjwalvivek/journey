@@ -14,7 +14,7 @@ use crate::combat::input_buffer::CombatInputBuffer;
 use crate::combat::moves::{MoveDatabase, MoveId};
 use crate::config::*;
 use crate::entity::{self, Entity};
-use engine::{AABB, Context, GameAction, Vec2, math::move_towards};
+use engine::{AABB, AudioEvent, Context, GameAction, Vec2, math::move_towards};
 
 //? The primary driver of movement behavior and animation.
 //? Combat timing is still handled by the CombatState FSM inside entity.combat.
@@ -114,6 +114,9 @@ pub struct Player {
     prev_position: Vec2,
 
     pub is_dead: bool,
+
+    //? Audio events produced this tick, drained by lib.rs after fixed_update.
+    pub pending_audio: Vec<AudioEvent>,
 }
 
 impl Player {
@@ -167,6 +170,7 @@ impl Player {
             grapple_arrived_at_enemy: false,
             prev_position: start_pos,
             is_dead: false,
+            pending_audio: Vec::new(),
         }
     }
 
@@ -259,6 +263,7 @@ impl Player {
         self.entity.velocity.y = -self.stats.jump_power;
         self.state = PlayerState::Jump;
         self.anim_state.play("Jump");
+        self.pending_audio.push(AudioEvent::Jump);
     }
 
     fn handle_direction(&mut self, dt: f32) {
@@ -328,6 +333,7 @@ impl Player {
         //?Combat FSM tracks i-frame timing
         fsm::begin_move(&mut self.entity.combat, MoveId::Dash, &self.move_db);
         self.anim_state.play("Dash");
+        self.pending_audio.push(AudioEvent::Dash);
     }
 
     //? Same wall the player last jumped from, prevents single-wall climbing.
@@ -353,6 +359,7 @@ impl Player {
         self.coyote_usable = false;
         self.ended_jump_early = false;
         self.jump_to_consume = false;
+        self.pending_audio.push(AudioEvent::Jump);
     }
 
     fn enter_wall_grab(&mut self) {
@@ -367,6 +374,7 @@ impl Player {
         self.has_air_dashed = false;
         self.state = PlayerState::WallGrab;
         self.anim_state.play("WallGrab");
+        self.pending_audio.push(AudioEvent::WallGrab);
     }
 
     pub fn enter_hitstop(&mut self, ticks: u16) {
@@ -375,10 +383,15 @@ impl Player {
     }
 
     pub fn enter_death(&mut self) {
+        //? Stop the run loop SFX if it was playing when death occurred.
+        if self.state == PlayerState::Run {
+            self.pending_audio.push(AudioEvent::RunStop);
+        }
         self.is_dead = true;
         self.state = PlayerState::Death;
         self.entity.velocity = Vec2::ZERO;
         self.anim_state.play("Death");
+        self.pending_audio.push(AudioEvent::Death);
     }
 
     pub fn respawn(&mut self, pos: Vec2) {
@@ -408,6 +421,8 @@ impl Player {
         self.grapple_is_enemy_target = false;
         self.grapple_arrived_at_enemy = false;
         self.prev_position = pos;
+        self.pending_audio.clear();
+        self.pending_audio.push(AudioEvent::Respawn);
         self.anim_state.play("Idle");
     }
 
@@ -447,6 +462,9 @@ impl Player {
         self.wall_jump_lock_timer = self.wall_jump_lock_timer.saturating_sub(1);
         self.drop_through_timer = self.drop_through_timer.saturating_sub(1);
         self.wall_detach_cooldown = self.wall_detach_cooldown.saturating_sub(1);
+
+        //? Capture state before any this-tick changes to detect Run start/stop.
+        let pre_step_state = self.state;
 
         //? HITSTOP: freeze all logic while timer is active
         if self.hitstop_timer > 0 {
@@ -551,16 +569,13 @@ impl Player {
         }
 
         //? 7. Physics: integrate velocity + resolve collisions
-        //* Dash/AirDash/Grapple states bypass collision entirely (ghost through geometry)
+        //* Grapple states collide with solids but ignore one-way platforms.
         self.was_grounded = self.entity.is_grounded;
         if matches!(
             self.state,
-            PlayerState::Dash
-                | PlayerState::AirDash
-                | PlayerState::GrapplePull
-                | PlayerState::GrappleSlingshot
+            PlayerState::GrapplePull | PlayerState::GrappleSlingshot
         ) {
-            self.entity.position += self.entity.velocity * dt;
+            entity::integrate_and_collide_with_one_way(&mut self.entity, solid_platforms, &[], dt);
         } else {
             let pre_collision_vx = self.entity.velocity.x;
 
@@ -582,8 +597,10 @@ impl Player {
             //? 8. Filter wall flags: only count Wall-type platforms (not floor edges)
             self.filter_wall_contacts(wall_platforms);
 
-            if (collision_wall_left && !self.entity.touching_wall_left)
-                || (collision_wall_right && !self.entity.touching_wall_right)
+            //? Dash states intentionally do NOT restore X here: they should stop on solids.
+            if !matches!(self.state, PlayerState::Dash | PlayerState::AirDash)
+                && ((collision_wall_left && !self.entity.touching_wall_left)
+                    || (collision_wall_right && !self.entity.touching_wall_right))
             {
                 self.entity.velocity.x = pre_collision_vx;
             }
@@ -608,6 +625,17 @@ impl Player {
 
         //? 9. Post-physics state transitions
         self.post_physics_transitions(wall_platforms);
+
+        //? Emit run-loop start/stop when Run state is entered or exited this tick.
+        match (pre_step_state, self.state) {
+            (s, PlayerState::Run) if s != PlayerState::Run => {
+                self.pending_audio.push(AudioEvent::Run);
+            }
+            (PlayerState::Run, s) if s != PlayerState::Run => {
+                self.pending_audio.push(AudioEvent::RunStop);
+            }
+            _ => {}
+        }
     }
 
     fn is_combat_fsm_state(&self) -> bool {
@@ -684,16 +712,19 @@ impl Player {
                 );
                 self.state = PlayerState::AttackHorizontal;
                 self.anim_state.play("AttackHorizontal");
+                self.pending_audio.push(AudioEvent::Swing);
             }
             MoveId::AttackUp => {
                 fsm::begin_move(&mut self.entity.combat, MoveId::AttackUp, &self.move_db);
                 self.state = PlayerState::AttackUp;
                 self.anim_state.play("AttackUp");
+                self.pending_audio.push(AudioEvent::Swing);
             }
             MoveId::AttackDown => {
                 fsm::begin_move(&mut self.entity.combat, MoveId::AttackDown, &self.move_db);
                 self.state = PlayerState::AttackDown;
                 self.anim_state.play("AttackDown");
+                self.pending_audio.push(AudioEvent::Swing);
             }
             MoveId::Grapple => {
                 //?Requires a valid target (populated in lib.rs each tick)
@@ -710,6 +741,11 @@ impl Player {
                     self.entity.combat.invincible = true;
                     self.state = PlayerState::GrapplePull;
                     self.anim_state.play("Grapple");
+                    if self.grapple_is_enemy_target {
+                        self.pending_audio.push(AudioEvent::GrappleEnemy);
+                    } else {
+                        self.pending_audio.push(AudioEvent::GrappleStatic);
+                    }
                 }
             }
         }
@@ -804,12 +840,17 @@ impl Player {
         if self.wall_grab_timer == 0 {
             self.state = PlayerState::WallSlide;
             self.anim_state.play("WallSlide");
+            self.pending_audio.push(AudioEvent::WallSlide);
         }
     }
 
     fn handle_dash_movement(&mut self, dash_speed: f32) {
         self.entity.velocity.x = dash_speed * self.dash_direction;
-        self.entity.velocity.y = 0.0;
+        self.entity.velocity.y = if self.state == PlayerState::Dash {
+            self.stats.grounding_force
+        } else {
+            0.0
+        };
     }
 
     fn handle_parry_movement(&mut self, dt: f32) {
@@ -892,6 +933,7 @@ impl Player {
             self.last_wall_jump_dir = 0.0;
             self.wall_jump_lock_timer = 0;
             self.wall_detach_cooldown = 0;
+            self.pending_audio.push(AudioEvent::Land);
         } else if self.was_grounded && !self.entity.is_grounded {
             self.tick_left_grounded = self.current_tick;
         }

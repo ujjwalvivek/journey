@@ -5,6 +5,7 @@
 *?  Text mode: Edit the raw ASCII level string with a live minimap preview.
 *--------------------------------------------------------------------------------**/
 use crate::level::Level;
+use engine::{AudioEvent, AudioResponse};
 
 pub struct LevelEditor {
     pub active: bool,
@@ -72,29 +73,36 @@ impl LevelEditor {
     pub fn show_ui(
         &mut self,
         ctx: &egui::Context,
-        _scene_params: &mut engine::scene::SceneParams,
+        _scene_params: &mut engine::SceneParams,
         level: &mut Level,
         screen_width: f32,
         screen_height: f32,
+        pending_audio: &mut Vec<AudioEvent>,
     ) {
         if !self.active {
             return;
         }
 
         if self.visual_mode {
-            self.show_visual_editor(ctx, level, screen_width, screen_height);
+            self.show_visual_editor(ctx, level, screen_width, screen_height, pending_audio);
         } else {
-            self.show_text_editor(ctx, level, screen_height);
+            self.show_text_editor(ctx, level, screen_height, pending_audio);
         }
     }
 
-    fn show_text_editor(&mut self, ctx: &egui::Context, level: &mut Level, screen_height: f32) {
+    fn show_text_editor(
+        &mut self,
+        ctx: &egui::Context,
+        level: &mut Level,
+        screen_height: f32,
+        pending_audio: &mut Vec<AudioEvent>,
+    ) {
         #[allow(deprecated)]
         let rect = ctx.screen_rect();
         let total_h = rect.height();
 
         let panel_frame = egui::Frame::NONE
-            .fill(egui::Color32::from_rgb(20, 20, 20))
+            .fill(egui::Color32::from_rgb(40, 40, 43))
             .inner_margin(egui::vec2(32.0, 32.0));
 
         egui::TopBottomPanel::top("text_editor_header")
@@ -107,7 +115,7 @@ impl LevelEditor {
                         egui::RichText::new("LEVEL EDITOR (TEXT MODE)")
                             .size(24.0)
                             .strong()
-                            .color(egui::Color32::WHITE),
+                            .color(egui::Color32::from_rgb(223, 249, 251)),
                     );
                 });
             });
@@ -127,6 +135,7 @@ impl LevelEditor {
                                 egui::RichText::new("Save & Reload").strong().size(14.0),
                             ),
                         )
+                        .with_ui_sound(pending_audio)
                         .clicked()
                     {
                         self.save_and_reload(level, screen_height);
@@ -141,6 +150,7 @@ impl LevelEditor {
                                     .size(14.0),
                             ),
                         )
+                        .with_ui_sound(pending_audio)
                         .clicked()
                     {
                         self.visual_mode = true;
@@ -159,9 +169,9 @@ impl LevelEditor {
             .show(ctx, |ui| {
                 ui.centered_and_justified(|ui| {
                     ui.label(
-                        egui::RichText::new("Journey Engine")
+                        egui::RichText::new("Untitled Game - Journey Engine")
                             .size(12.0)
-                            .color(egui::Color32::from_rgba_unmultiplied(12, 12, 12, 255)),
+                            .color(egui::Color32::from_rgb(223, 249, 251)),
                     );
                 });
             });
@@ -198,13 +208,13 @@ impl LevelEditor {
                             for (r, line) in lines.iter().enumerate() {
                                 for (c, ch) in line.chars().enumerate() {
                                     let color = match ch {
-                                        '#' => egui::Color32::DARK_GRAY,
-                                        '=' => egui::Color32::GRAY,
-                                        '_' => egui::Color32::LIGHT_GRAY,
-                                        '@' => egui::Color32::GREEN,
-                                        'O' => egui::Color32::YELLOW,
+                                        '#' => egui::Color32::from_rgb(20, 20, 23),
+                                        '=' => egui::Color32::from_rgb(20, 20, 23),
+                                        '_' => egui::Color32::from_rgb(113, 88, 226),
+                                        '@' => egui::Color32::RED,
+                                        'O' => egui::Color32::GREEN,
                                         '*' => egui::Color32::from_rgb(50, 200, 255),
-                                        'E' | 'S' | 'R' => egui::Color32::RED,
+                                        'E' | 'S' | 'R' => egui::Color32::YELLOW,
                                         _ => continue,
                                     };
                                     let b_min = map_rect.min
@@ -268,6 +278,7 @@ impl LevelEditor {
         level: &mut Level,
         _game_w: f32,
         _game_h: f32,
+        pending_audio: &mut Vec<AudioEvent>,
     ) {
         let internal_w = 640.0;
         let internal_h = 360.0;
@@ -360,10 +371,18 @@ impl LevelEditor {
             .fixed_pos(egui::pos2(10.0, 20.0))
             .show(egui_ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.button("Switch to Text Editor").clicked() {
+                    if ui
+                        .button("Switch to Text Editor")
+                        .with_ui_sound(pending_audio)
+                        .clicked()
+                    {
                         self.visual_mode = false;
                     }
-                    if ui.button("Save & Reload").clicked() {
+                    if ui
+                        .button("Save & Reload")
+                        .with_ui_sound(pending_audio)
+                        .clicked()
+                    {
                         self.save_and_reload(level, internal_h);
                     }
                     ui.label("Pan with WASD/Arrows or Middle-Click drag");

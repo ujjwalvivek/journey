@@ -7,7 +7,8 @@ use crate::combat::input_buffer::CombatInputBuffer;
 use crate::config::PhysicsConfig;
 use crate::enemy::Enemy;
 use crate::player::PlayerState;
-use engine::scene::SceneParams;
+use engine::SceneParams;
+use engine::{AudioEvent, AudioResponse};
 
 #[derive(Debug, Clone, Default)]
 pub struct GameScene {
@@ -40,6 +41,7 @@ pub struct DebugUiParams<'a> {
     pub physics_config: &'a mut PhysicsConfig,
     pub using_gamepad: bool, //* Preserve this bool for later UI updates INGAME
     pub show_physics_tuner_in_game: bool,
+    pub pending_audio: &'a mut Vec<AudioEvent>,
 }
 
 //? Keeps the game wrapper in sync with engine-owned `SceneParams`.
@@ -66,6 +68,7 @@ pub fn show_ui(p: DebugUiParams<'_>) {
         physics_config,
         using_gamepad: _using_gamepad,
         show_physics_tuner_in_game,
+        pending_audio,
     } = p;
     scene.params = params.clone();
 
@@ -78,9 +81,12 @@ pub fn show_ui(p: DebugUiParams<'_>) {
         .default_pos([10.0, 10.0])
         .constrain(true)
         .show(ctx, |ui| {
-            ui.checkbox(&mut scene.show_collision_box, "Show collision Box");
-            ui.checkbox(&mut scene.show_fps, "Show FPS");
-            ui.checkbox(&mut scene.show_combat, "Show combat FSM");
+            ui.checkbox(&mut scene.show_collision_box, "Show collision Box")
+                .with_checkbox_sound(scene.show_collision_box, pending_audio);
+            ui.checkbox(&mut scene.show_fps, "Show FPS")
+                .with_checkbox_sound(scene.show_fps, pending_audio);
+            ui.checkbox(&mut scene.show_combat, "Show combat FSM")
+                .with_checkbox_sound(scene.show_combat, pending_audio);
 
             if scene.show_fps {
                 ui.separator();

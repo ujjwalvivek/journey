@@ -1,6 +1,7 @@
 /**----------------------------------------------------
 *!  Game context providing access to engine systems.
 *----------------------------------------------------**/
+use crate::audio::{AudioEvent, AudioManager};
 use crate::input::InputState;
 use crate::sprite::{BlendMode, Rect, Sprite};
 use glam::Vec2;
@@ -27,6 +28,12 @@ pub struct Context {
     pub freeze_frames: u16,
     pub pending_shakes: Vec<(f32, f32)>,
     pub request_exit: bool,
+    pub fullscreen_enabled: bool,
+    pub request_fullscreen: Option<bool>,
+    pub hdr_enabled: bool,
+    pub request_hdr: Option<bool>,
+    pub audio: AudioManager,
+    pub pending_audio: Vec<AudioEvent>,
 
     //* pub(crate) - public only within the current crate
     //* Vec<T> - growable, heap-allocated array
@@ -61,6 +68,12 @@ impl Context {
             pending_shakes: Vec::new(),
             pending_textures: Vec::new(),
             request_exit: false,
+            fullscreen_enabled: true,
+            request_fullscreen: None,
+            hdr_enabled: false,
+            request_hdr: None,
+            audio: AudioManager::new(),
+            pending_audio: Vec::new(),
         }
     }
 
@@ -95,7 +108,7 @@ impl Context {
     pub fn draw_sprite(&mut self, position: Vec2, size: Vec2, color: [f32; 4], flip_x: bool) {
         self.sprite_batch
             .push(Sprite::new(position, size, color).with_flip(flip_x));
-        /* //! push to the array just like in C++ std::vector or python list. */
+        //* push to the array just like in C++ std::vector or python list.
     }
 
     //* Same as draw_sprite, without flip
@@ -151,6 +164,25 @@ impl Context {
         Vec2::new(self.screen_width / 2.0, self.screen_height / 2.0)
     }
 
+    //? Queue a one-shot audio event. Safe to call from `fixed_update` or `update`.
+    //? Duplicates within the same frame are automatically deduplicated on drain.
+    pub fn push_audio(&mut self, event: AudioEvent) {
+        self.pending_audio.push(event);
+    }
+
+    pub(crate) fn drain_audio_events(&mut self) {
+        if self.pending_audio.is_empty() {
+            return;
+        }
+        //? Deduplicate: only fire each unique event once per frame
+        self.pending_audio.sort_unstable_by_key(|e| *e as u32);
+        self.pending_audio.dedup();
+        //* Events are dispatched by the game's audio handler via drain
+        //* The game reads pending_audio after this sort+dedup
+        //* Actually, we just leave them sorted+deduped for the game to consume
+        //* since the game owns the StaticSoundData mapping.
+    }
+
     //? Clear sprite batch (called internally between frames).
     //* Method is public within the crate, not outside.
     pub(crate) fn clear_sprites(&mut self) {
@@ -162,5 +194,13 @@ impl Context {
     pub(crate) fn resize(&mut self, width: f32, height: f32) {
         self.screen_width = width;
         self.screen_height = height;
+    }
+
+    pub fn set_fullscreen_enabled(&mut self, enabled: bool) {
+        self.request_fullscreen = Some(enabled);
+    }
+
+    pub fn set_hdr_enabled(&mut self, enabled: bool) {
+        self.request_hdr = Some(enabled);
     }
 }

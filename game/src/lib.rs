@@ -288,6 +288,12 @@ impl GameApp for JourneyGame {
         let init_camera_y =
             level.clamp_camera_y(start_pos.y - ctx.screen_height / 2.0, ctx.screen_height);
 
+        let splash_duration = if cfg!(target_arch = "wasm32") {
+            0.0
+        } else {
+            2.0
+        };
+
         Self {
             player,
             enemies,
@@ -311,7 +317,9 @@ impl GameApp for JourneyGame {
             level_editor: LevelEditor::new(),
             vfx_bursts: Vec::new(),
             using_gamepad: false,
-            state: GameState::Splash { timer: 3.0 },
+            state: GameState::Splash {
+                timer: splash_duration,
+            },
             show_physics_tuner_in_game: false,
             audio_assets: AudioAssets::load(),
             audio_music_state: AudioMusicState::None,
@@ -760,7 +768,10 @@ impl GameApp for JourneyGame {
 
     //? Render the level and player
     fn render(&mut self, ctx: &mut Context) {
-        if let GameState::Splash { .. } = self.state {
+        if matches!(
+            self.state,
+            GameState::Splash { .. } | GameState::StartMenu { .. }
+        ) {
             return;
         }
 

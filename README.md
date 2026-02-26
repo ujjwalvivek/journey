@@ -144,9 +144,9 @@ This forces a clean API from `engine` to `game`. It also allows `engine` to be c
 
 ## Media and Resources
 
-![Crate Architecture](docs/media/crate_architecture.png)
-![Gameloop](docs/media/game_loop.png)
-![Render Pipeline](docs/media/render_pipeline.png)
+![Crate Architecture](docs/media/architecture.png)
+![Gameloop](docs/media/gameloop.png)
+![Render Pipeline](docs/media/renderpipeline.png)
 
 ## Docs
 

@@ -67,10 +67,10 @@ All crates are to be `WASM-compatible`.
 
 ## Media and Resources
 
-![Crate Architecture](./media/crate_architecture.png)
-![Gameloop](./media/game_loop.png)
-![InputBuffer Logic](./media/inputBuffer_logic.png)
-![Render Pipeline](./media/render_pipeline.png)
+![Crate Architecture](./media/architecture.png)
+![Gameloop](./media/gameloop.png)
+![InputBuffer Logic](./media/inputbuffer.png)
+![Render Pipeline](./media/renderpipeline.png)
 
 ## Docs
 

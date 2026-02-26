@@ -19,13 +19,94 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #000;
+      background: rgb(10,10,13);
     }
 
     canvas {
       display: block;
       width: 100%;
       height: 100%;
+      overflow: hidden;
+      object-fit: contain;
+      background: rgb(10,10,13);
+      clip-path: inset(0 0);
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e8eaee;
+      font-family: 'monospace', monospace;
+      transition: opacity 500ms ease;
+    }
+
+    .card {
+      width: min(480px, 88vw);
+      padding: 32px 28px 28px;
+    }
+
+    #brand {
+      font-size: 13px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #e8eaee;
+      margin-bottom: 20px;
+    }
+
+    #title {
+      font-size: 16px;
+      font-weight: 400;
+      letter-spacing: 0.3px;
+      margin-bottom: 24px;
+      color: #e8eaee;
+      min-height: 1.4em;
+    }
+
+    .progress-track {
+      position: relative;
+      width: 100%;
+      height: 4px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    #progress-fill {
+      width: 100%;
+      height: 100%;
+      transform-origin: left center;
+      transform: scaleX(0);
+      background: rgba(232, 234, 238, 0.7);
+      transition: none;
+    }
+
+    #progress-fill.done {
+      transition: transform 400ms cubic-bezier(0.2, 0.9, 0.2, 1);
+      transform: scaleX(1);
+    }
+
+    #progress-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
+      font-size: 11px;
+      color: rgba(227, 233, 242, 0.4);
+      letter-spacing: 0.5px;
+    }
+
+    #progress-status {
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 1.5px;
+    }
+
+    body.ready #overlay {
+      opacity: 0;
+      pointer-events: none;
     }
 
     #orientation-warning {
@@ -87,6 +168,19 @@
 </head>
 
 <body>
+  <div id="overlay">
+    <div class="card">
+      <div id="brand">Journey Engine</div>
+      <div id="title"></div>
+      <div class="progress-track">
+        <div id="progress-fill"></div>
+      </div>
+      <div id="progress-meta">
+        <span id="progress-status"></span>
+        <span id="hint"></span>
+      </div>
+    </div>
+  </div>
   <div id="orientation-warning">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <rect x="4" y="2" width="16" height="20" rx="2" />

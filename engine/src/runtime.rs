@@ -351,6 +351,8 @@ struct EngineState<G: GameApp> {
     offscreen_texture: wgpu::Texture,
     offscreen_view: wgpu::TextureView,
     blit_bind_group: wgpu::BindGroup,
+    #[cfg(target_arch = "wasm32")]
+    first_frame_event_sent: bool,
 }
 
 //? Core engine state initialization:
@@ -675,6 +677,8 @@ impl<G: GameApp> EngineState<G> {
             offscreen_texture,
             offscreen_view,
             blit_bind_group,
+            #[cfg(target_arch = "wasm32")]
+            first_frame_event_sent: false,
         }
     }
 
@@ -745,9 +749,27 @@ impl<G: GameApp> EngineState<G> {
         //? Rebuild action state from raw inputs at frame start
         self.context.input.begin_frame(raw_dt);
 
+        //? Compute letterbox viewport (shared by egui constraint + blit pass)
+        let sw = self.config.width as f32;
+        let sh = self.config.height as f32;
+        let target_aspect = INTERNAL_WIDTH as f32 / INTERNAL_HEIGHT as f32;
+        let window_aspect = sw / sh;
+        let (vp_w, vp_h) = if window_aspect > target_aspect {
+            (sh * target_aspect, sh)
+        } else {
+            (sw, sw / target_aspect)
+        };
+        let vp_x = (sw - vp_w) / 2.0;
+        let vp_y = (sh - vp_h) / 2.0;
+
         //? Build the egui UI and detect discrete changes to scene parameters (excluding time).
         let mut params = self.params.clone();
-        let raw_input = self.egui_state.take_egui_input(&self.window);
+        let mut raw_input = self.egui_state.take_egui_input(&self.window);
+        let ppp = self.egui_ctx.pixels_per_point();
+        raw_input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::pos2(vp_x / ppp, vp_y / ppp),
+            egui::vec2(vp_w / ppp, vp_h / ppp),
+        ));
         let ctx = &mut self.context;
         let full_output = self.egui_ctx.run(raw_input, |egui_ctx| {
             self.game.ui(egui_ctx, ctx, &mut params);
@@ -935,21 +957,6 @@ impl<G: GameApp> EngineState<G> {
 
         //? Pass 3: blit offscreen buffer → surface with nearest-neighbor + letterboxing
         {
-            let sw = self.config.width as f32;
-            let sh = self.config.height as f32;
-            let target_aspect = INTERNAL_WIDTH as f32 / INTERNAL_HEIGHT as f32;
-            let window_aspect = sw / sh;
-
-            let (vp_w, vp_h) = if window_aspect > target_aspect {
-                //* Pillarbox: window is wider than 16:9
-                (sh * target_aspect, sh)
-            } else {
-                //* Letterbox: window is taller than 16:9
-                (sw, sw / target_aspect)
-            };
-            let vp_x = (sw - vp_w) / 2.0;
-            let vp_y = (sh - vp_h) / 2.0;
-
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Blit Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1003,6 +1010,16 @@ impl<G: GameApp> EngineState<G> {
         //? Submit the command buffer to the GPU queue and present the frame.
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+
+        #[cfg(target_arch = "wasm32")]
+        if !self.first_frame_event_sent {
+            self.first_frame_event_sent = true;
+            if let Some(web_window) = web_sys::window()
+                && let Ok(event) = web_sys::Event::new("journey:first-frame")
+            {
+                let _ = web_window.dispatch_event(&event);
+            }
+        }
 
         //? Save the current state of tracked keys for the next frame's edge detection calculations.
         self.context.input.end_frame();

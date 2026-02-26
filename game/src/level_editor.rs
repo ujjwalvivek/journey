@@ -97,194 +97,226 @@ impl LevelEditor {
         screen_height: f32,
         pending_audio: &mut Vec<AudioEvent>,
     ) {
-        #[allow(deprecated)]
-        let rect = ctx.screen_rect();
-        let total_h = rect.height();
+        let letterbox = crate::start_sequence::menu_letterbox_rect(ctx);
+        let total_h = letterbox.height();
+        let ui_scale = (letterbox.height() / 1080.0).clamp(0.3, 1.0);
+        let label_size = 14.0 * ui_scale;
 
         let panel_frame = egui::Frame::NONE
             .fill(egui::Color32::from_rgb(40, 40, 43))
-            .inner_margin(egui::vec2(32.0, 32.0));
+            .inner_margin(egui::vec2(16.0 * ui_scale, 12.0 * ui_scale));
 
-        egui::TopBottomPanel::top("text_editor_header")
-            .frame(panel_frame)
-            .show_separator_line(false)
-            .exact_height(total_h * 0.1)
+        let bg_frame = egui::Frame::NONE.fill(egui::Color32::from_rgb(40, 40, 43));
+
+        egui::Window::new("text_editor_window")
+            .title_bar(false)
+            .resizable(false)
+            .movable(false)
+            .fixed_pos(letterbox.min)
+            .fixed_size(letterbox.size())
+            .frame(bg_frame)
             .show(ctx, |ui| {
-                ui.centered_and_justified(|ui| {
-                    ui.heading(
-                        egui::RichText::new("LEVEL EDITOR (TEXT MODE)")
-                            .size(24.0)
-                            .strong()
-                            .color(egui::Color32::from_rgb(223, 249, 251)),
-                    );
-                });
-            });
-
-        egui::TopBottomPanel::top("text_editor_toolbar")
-            .frame(panel_frame)
-            .show_separator_line(false)
-            .exact_height(total_h * 0.1)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add_space(20.0);
-                    let btn_size = egui::vec2(160.0, 30.0);
-                    if ui
-                        .add_sized(
-                            btn_size,
-                            egui::Button::new(
-                                egui::RichText::new("Save & Reload").strong().size(14.0),
-                            ),
-                        )
-                        .with_ui_sound(pending_audio)
-                        .clicked()
-                    {
-                        self.save_and_reload(level, screen_height);
-                    }
-                    ui.add_space(10.0);
-
-                    //? Surface any structural errors before the level executes
-                    let warnings = self.validate_text_buffer();
-                    if !warnings.is_empty() {
-                        ui.add_space(8.0);
-                        for w in &warnings {
+                egui::TopBottomPanel::top("text_editor_header")
+                    .frame(panel_frame)
+                    .show_separator_line(false)
+                    .exact_height(total_h * 0.08)
+                    .show_inside(ui, |ui| {
+                        ui.centered_and_justified(|ui| {
                             ui.label(
-                                egui::RichText::new(format!("! {w}"))
-                                    .size(12.0)
-                                    .color(egui::Color32::from_rgb(255, 180, 60)),
-                            );
-                        }
-                    }
-                    ui.add_space(10.0);
-                    if ui
-                        .add_sized(
-                            btn_size,
-                            egui::Button::new(
-                                egui::RichText::new("Switch to Visual Editor")
+                                egui::RichText::new("Level Editor")
+                                    .size(20.0 * ui_scale)
                                     .strong()
-                                    .size(14.0),
-                            ),
-                        )
-                        .with_ui_sound(pending_audio)
-                        .clicked()
-                    {
-                        self.visual_mode = true;
-                        self.save_and_reload(level, screen_height);
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label("Press F12 to close");
+                                    .color(egui::Color32::from_rgb(223, 249, 251)),
+                            );
+                        });
                     });
-                });
-            });
 
-        egui::TopBottomPanel::bottom("text_editor_footer")
-            .frame(panel_frame)
-            .show_separator_line(false)
-            .exact_height(total_h * 0.05)
-            .show(ctx, |ui| {
-                ui.centered_and_justified(|ui| {
-                    ui.label(
-                        egui::RichText::new("Untitled Game - Journey Engine")
-                            .size(12.0)
-                            .color(egui::Color32::from_rgb(223, 249, 251)),
-                    );
-                });
-            });
+                egui::TopBottomPanel::top("text_editor_toolbar")
+                    .frame(panel_frame)
+                    .show_separator_line(false)
+                    .exact_height(total_h * 0.08)
+                    .show_inside(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_space(12.0 * ui_scale);
+                            let btn_size = egui::vec2(160.0 * ui_scale, 28.0 * ui_scale);
+                            if ui
+                                .add_sized(
+                                    btn_size,
+                                    egui::Button::new(
+                                        egui::RichText::new("Save & Reload")
+                                            .strong()
+                                            .size(label_size),
+                                    )
+                                    .corner_radius(2.0),
+                                )
+                                .with_ui_sound(pending_audio)
+                                .clicked()
+                            {
+                                self.save_and_reload(level, screen_height);
+                            }
+                            ui.add_space(8.0 * ui_scale);
 
-        egui::TopBottomPanel::bottom("text_editor_minimap")
-            .frame(panel_frame)
-            .show_separator_line(false)
-            .exact_height(total_h * 0.40)
-            .show(ctx, |ui| {
-                ui.heading("Minimap Preview");
-                ui.add_space(8.0);
-                egui::ScrollArea::both()
-                    .id_salt("minimap_scroll")
-                    .show(ui, |ui| {
-                        let lines: Vec<&str> = self.text_buffer.lines().collect();
-                        let rows = lines.len();
-                        let cols = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-
-                        let available_width = ui.available_size_before_wrap().x.max(1.0);
-                        let block_size = if cols > 0 {
-                            (available_width / cols as f32).clamp(4.0, 24.0)
-                        } else {
-                            6.0
-                        };
-
-                        let minimap_size =
-                            egui::vec2(cols as f32 * block_size, rows as f32 * block_size);
-
-                        let (map_rect, _response) =
-                            ui.allocate_exact_size(minimap_size, egui::Sense::hover());
-
-                        if ui.is_rect_visible(map_rect) {
-                            let painter = ui.painter();
-                            for (r, line) in lines.iter().enumerate() {
-                                for (c, ch) in line.chars().enumerate() {
-                                    let color = match ch {
-                                        '#' => egui::Color32::from_rgb(20, 20, 23),
-                                        '=' => egui::Color32::from_rgb(20, 20, 23),
-                                        '_' => egui::Color32::from_rgb(113, 88, 226),
-                                        '@' => egui::Color32::RED,
-                                        'O' => egui::Color32::GREEN,
-                                        '*' => egui::Color32::from_rgb(50, 200, 255),
-                                        'E' | 'S' | 'R' => egui::Color32::YELLOW,
-                                        _ => continue,
-                                    };
-                                    let b_min = map_rect.min
-                                        + egui::vec2(c as f32 * block_size, r as f32 * block_size);
-                                    let b_max = b_min + egui::vec2(block_size, block_size);
-                                    painter.rect_filled(
-                                        egui::Rect::from_min_max(b_min, b_max),
-                                        0.0,
-                                        color,
+                            let warnings = self.validate_text_buffer();
+                            if !warnings.is_empty() {
+                                ui.add_space(4.0);
+                                for w in &warnings {
+                                    ui.label(
+                                        egui::RichText::new(format!("! {w}"))
+                                            .size(11.0 * ui_scale)
+                                            .color(egui::Color32::from_rgb(255, 180, 60)),
                                     );
                                 }
                             }
-                        }
-                    });
-            });
-
-        egui::CentralPanel::default()
-            .frame(panel_frame)
-            .show(ctx, |ui| {
-                egui::ScrollArea::both()
-                    .id_salt("text_editor_scroll")
-                    .show(ui, |ui| {
-                        ui.add_space(20.0);
-                        ui.heading("ASCII Preview");
-                        ui.add_space(4.0);
-                        ui.horizontal_wrapped(|ui| {
-                            let legend = [
-                                ('#', "Wall"),
-                                ('=', "Floor"),
-                                ('_', "One-Way"),
-                                ('*', "Grapple"),
-                                ('@', "Spawn"),
-                                ('E', "Grunt"),
-                                ('S', "Sniper"),
-                                ('R', "Ronin"),
-                                ('O', "Exit"),
-                                ('.', "Air"),
-                            ];
-                            for (ch, name) in legend {
-                                ui.label(
-                                    egui::RichText::new(format!("{ch} = {name}"))
-                                        .monospace()
-                                        .size(11.0)
-                                        .color(egui::Color32::from_rgb(170, 210, 220)),
-                                );
-                                ui.separator();
+                            ui.add_space(8.0 * ui_scale);
+                            if ui
+                                .add_sized(
+                                    btn_size,
+                                    egui::Button::new(
+                                        egui::RichText::new("Visual Editor")
+                                            .strong()
+                                            .size(label_size),
+                                    )
+                                    .corner_radius(2.0),
+                                )
+                                .with_ui_sound(pending_audio)
+                                .clicked()
+                            {
+                                self.visual_mode = true;
+                                self.save_and_reload(level, screen_height);
                             }
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        egui::RichText::new("F12 to close")
+                                            .size(11.0 * ui_scale)
+                                            .weak(),
+                                    );
+                                },
+                            );
                         });
-                        ui.add_space(8.0);
+                    });
 
-                        egui::TextEdit::multiline(&mut self.text_buffer)
-                            .font(egui::TextStyle::Monospace)
-                            .code_editor()
-                            .desired_width(f32::INFINITY)
-                            .lock_focus(true)
-                            .show(ui);
+                egui::TopBottomPanel::bottom("text_editor_footer")
+                    .frame(panel_frame)
+                    .show_separator_line(false)
+                    .exact_height(total_h * 0.04)
+                    .show_inside(ui, |ui| {
+                        ui.centered_and_justified(|ui| {
+                            ui.label(
+                                egui::RichText::new("Journey Engine")
+                                    .size(10.0 * ui_scale)
+                                    .color(egui::Color32::from_rgba_unmultiplied(
+                                        223, 249, 251, 120,
+                                    )),
+                            );
+                        });
+                    });
+
+                egui::TopBottomPanel::bottom("text_editor_minimap")
+                    .frame(panel_frame)
+                    .show_separator_line(false)
+                    .exact_height(total_h * 0.40)
+                    .show_inside(ui, |ui| {
+                        ui.label(egui::RichText::new("Minimap").size(label_size).strong());
+                        ui.add_space(4.0 * ui_scale);
+                        egui::ScrollArea::both()
+                            .id_salt("minimap_scroll")
+                            .show(ui, |ui| {
+                                let lines: Vec<&str> = self.text_buffer.lines().collect();
+                                let rows = lines.len();
+                                let cols =
+                                    lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+
+                                let available_width = ui.available_size_before_wrap().x.max(1.0);
+                                let block_size = if cols > 0 {
+                                    (available_width / cols as f32).clamp(4.0, 24.0)
+                                } else {
+                                    6.0
+                                };
+
+                                let minimap_size =
+                                    egui::vec2(cols as f32 * block_size, rows as f32 * block_size);
+
+                                let (map_rect, _response) =
+                                    ui.allocate_exact_size(minimap_size, egui::Sense::hover());
+
+                                if ui.is_rect_visible(map_rect) {
+                                    let painter = ui.painter();
+                                    for (r, line) in lines.iter().enumerate() {
+                                        for (c, ch) in line.chars().enumerate() {
+                                            let color = match ch {
+                                                '#' => egui::Color32::from_rgb(20, 20, 23),
+                                                '=' => egui::Color32::from_rgb(20, 20, 23),
+                                                '_' => egui::Color32::from_rgb(113, 88, 226),
+                                                '@' => egui::Color32::RED,
+                                                'O' => egui::Color32::GREEN,
+                                                '*' => egui::Color32::from_rgb(50, 200, 255),
+                                                'E' | 'S' | 'R' => egui::Color32::YELLOW,
+                                                _ => continue,
+                                            };
+                                            let b_min = map_rect.min
+                                                + egui::vec2(
+                                                    c as f32 * block_size,
+                                                    r as f32 * block_size,
+                                                );
+                                            let b_max = b_min + egui::vec2(block_size, block_size);
+                                            painter.rect_filled(
+                                                egui::Rect::from_min_max(b_min, b_max),
+                                                0.0,
+                                                color,
+                                            );
+                                        }
+                                    }
+                                }
+                            });
+                    });
+
+                egui::CentralPanel::default()
+                    .frame(panel_frame)
+                    .show_inside(ui, |ui| {
+                        egui::ScrollArea::both()
+                            .id_salt("text_editor_scroll")
+                            .show(ui, |ui| {
+                                ui.add_space(12.0 * ui_scale);
+                                ui.label(
+                                    egui::RichText::new("ASCII Preview")
+                                        .size(label_size)
+                                        .strong(),
+                                );
+                                ui.add_space(4.0 * ui_scale);
+                                ui.horizontal_wrapped(|ui| {
+                                    let legend = [
+                                        ('#', "Wall"),
+                                        ('=', "Floor"),
+                                        ('_', "One-Way"),
+                                        ('*', "Grapple"),
+                                        ('@', "Spawn"),
+                                        ('E', "Grunt"),
+                                        ('S', "Sniper"),
+                                        ('R', "Ronin"),
+                                        ('O', "Exit"),
+                                        ('.', "Air"),
+                                    ];
+                                    for (ch, name) in legend {
+                                        ui.label(
+                                            egui::RichText::new(format!("{ch} = {name}"))
+                                                .monospace()
+                                                .size(10.0 * ui_scale)
+                                                .color(egui::Color32::from_rgb(170, 210, 220)),
+                                        );
+                                        ui.separator();
+                                    }
+                                });
+                                ui.add_space(8.0);
+
+                                egui::TextEdit::multiline(&mut self.text_buffer)
+                                    .font(egui::TextStyle::Monospace)
+                                    .code_editor()
+                                    .desired_width(f32::INFINITY)
+                                    .lock_focus(true)
+                                    .show(ui);
+                            });
                     });
             });
     }
@@ -345,8 +377,7 @@ impl LevelEditor {
         let internal_w = 640.0;
         let internal_h = 360.0;
 
-        #[allow(deprecated)]
-        let logical_rect = egui_ctx.screen_rect();
+        let logical_rect = egui_ctx.viewport_rect();
         let logical_w = logical_rect.width();
         let logical_h = logical_rect.height();
 
@@ -430,7 +461,7 @@ impl LevelEditor {
 
         //? Egui UI Overlay for Palette
         egui::Window::new("Visual Editor Tools")
-            .fixed_pos(egui::pos2(10.0, 20.0))
+            .fixed_pos(egui::pos2(vp_x + 10.0, vp_y + 20.0))
             .show(egui_ctx, |ui| {
                 ui.horizontal(|ui| {
                     if ui

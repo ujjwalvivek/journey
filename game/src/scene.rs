@@ -321,26 +321,34 @@ pub fn controls_ui(ui: &mut egui::Ui, using_gamepad: bool) {
     };
 
     ui.set_min_width(148.0);
+    ui.push_id(
+        if using_gamepad {
+            "controller"
+        } else {
+            "keyboard"
+        },
+        |ui| {
+            let header = if using_gamepad {
+                "Controller"
+            } else {
+                "Keyboard & Mouse"
+            };
+            ui.colored_label(
+                egui::Color32::from_rgba_unmultiplied(200, 200, 200, 200),
+                egui::RichText::new(header).size(16.0).strong(),
+            );
+            ui.add_space(4.0);
 
-    let header = if using_gamepad {
-        "Controller"
-    } else {
-        "Keyboard & Mouse"
-    };
-    ui.colored_label(
-        egui::Color32::from_rgba_unmultiplied(200, 200, 200, 200),
-        egui::RichText::new(header).size(16.0).strong(),
+            egui::Grid::new("controls_grid")
+                .num_columns(2)
+                .spacing([12.0, 3.0])
+                .show(ui, |ui| {
+                    for &(action, key) in controls {
+                        ui.colored_label(dim, egui::RichText::new(action).size(16.0));
+                        ui.colored_label(val, egui::RichText::new(key).size(16.0).strong());
+                        ui.end_row();
+                    }
+                });
+        },
     );
-    ui.add_space(4.0);
-
-    egui::Grid::new("controls_grid")
-        .num_columns(2)
-        .spacing([12.0, 3.0])
-        .show(ui, |ui| {
-            for &(action, key) in controls {
-                ui.colored_label(dim, egui::RichText::new(action).size(16.0));
-                ui.colored_label(val, egui::RichText::new(key).size(16.0).strong());
-                ui.end_row();
-            }
-        });
 }

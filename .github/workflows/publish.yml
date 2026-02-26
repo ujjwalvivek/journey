@@ -41,11 +41,12 @@ jobs:
         working-directory: ./game/pkg
         run: npm pkg set name="@ujjwalvivek/journey-engine" && npm pkg set version="${GITHUB_REF#refs/tags/v}"
 
+      - name: Upgrade NPM for OIDC support
+        run: npm install -g npm@latest
+
       - name: Publish to NPM
         working-directory: ./game/pkg
-        run: |
-          npm config delete //registry.npmjs.org/:_authToken || true
-          npm publish --provenance --access public
+        run: npm publish --provenance --access public
 
       - name: Setup Node.js for GitHub Packages
         uses: actions/setup-node@v4
@@ -91,14 +92,12 @@ jobs:
 
       - name: Package Linux Binary & Hash
         if: runner.os == 'Linux'
-        working-directory: ./game
         run: |
           tar -czvf ${{ matrix.artifact_name }} -C target/release journey
           sha256sum ${{ matrix.artifact_name }} > ${{ matrix.artifact_name }}.sha256
 
       - name: Package Windows Exe & Hash
         if: runner.os == 'Windows'
-        working-directory: ./game
         run: |
           Compress-Archive -Path ${{ matrix.bin_path }} -DestinationPath ${{ matrix.artifact_name }}
           (Get-FileHash ${{ matrix.artifact_name }} -Algorithm SHA256).Hash | Out-File -FilePath "${{ matrix.artifact_name }}.sha256" -Encoding ascii

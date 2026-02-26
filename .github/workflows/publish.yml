@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 jobs:
   publish:
@@ -40,9 +41,7 @@ jobs:
 
       - name: Publish to NPM
         working-directory: ./game/pkg
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
 
       - name: Setup Node.js for GitHub Packages
         uses: actions/setup-node@v4

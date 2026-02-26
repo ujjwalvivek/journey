@@ -141,6 +141,20 @@ impl LevelEditor {
                         self.save_and_reload(level, screen_height);
                     }
                     ui.add_space(10.0);
+
+                    //? Surface any structural errors before the level executes
+                    let warnings = self.validate_text_buffer();
+                    if !warnings.is_empty() {
+                        ui.add_space(8.0);
+                        for w in &warnings {
+                            ui.label(
+                                egui::RichText::new(format!("! {w}"))
+                                    .size(12.0)
+                                    .color(egui::Color32::from_rgb(255, 180, 60)),
+                            );
+                        }
+                    }
+                    ui.add_space(10.0);
                     if ui
                         .add_sized(
                             btn_size,
@@ -239,6 +253,30 @@ impl LevelEditor {
                     .show(ui, |ui| {
                         ui.add_space(20.0);
                         ui.heading("ASCII Preview");
+                        ui.add_space(4.0);
+                        ui.horizontal_wrapped(|ui| {
+                            let legend = [
+                                ('#', "Wall"),
+                                ('=', "Floor"),
+                                ('_', "One-Way"),
+                                ('*', "Grapple"),
+                                ('@', "Spawn"),
+                                ('E', "Grunt"),
+                                ('S', "Sniper"),
+                                ('R', "Ronin"),
+                                ('O', "Exit"),
+                                ('.', "Air"),
+                            ];
+                            for (ch, name) in legend {
+                                ui.label(
+                                    egui::RichText::new(format!("{ch} = {name}"))
+                                        .monospace()
+                                        .size(11.0)
+                                        .color(egui::Color32::from_rgb(170, 210, 220)),
+                                );
+                                ui.separator();
+                            }
+                        });
                         ui.add_space(8.0);
 
                         egui::TextEdit::multiline(&mut self.text_buffer)
@@ -249,6 +287,30 @@ impl LevelEditor {
                             .show(ui);
                     });
             });
+    }
+
+    //? Returns a list of human-readable warnings for the current text buffer.
+    //? Runs before save to surface structural errors in the editor UI.
+    pub fn validate_text_buffer(&self) -> Vec<String> {
+        let mut warnings = Vec::new();
+        let spawn_count = self.text_buffer.chars().filter(|&c| c == '@').count();
+        match spawn_count {
+            0 => warnings
+                .push("No player spawn (@) found. Player will spawn at (100, 100).".to_string()),
+            n if n > 1 => warnings.push(format!(
+                "Multiple player spawns (@) found: {n}. Only the first will be used."
+            )),
+            _ => {}
+        }
+        let exit_count = self.text_buffer.chars().filter(|&c| c == 'O').count();
+        if exit_count == 0 {
+            warnings.push("No exit (O) found. Level has no goal.".to_string());
+        }
+        let has_floor = self.text_buffer.chars().any(|c| c == '=' || c == '#');
+        if !has_floor {
+            warnings.push("No solid tiles (= or #) found. Level has no floor.".to_string());
+        }
+        warnings
     }
 
     fn save_and_reload(&self, level: &mut Level, screen_height: f32) {

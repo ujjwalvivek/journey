@@ -1,7 +1,7 @@
 # Journey Engine, with a Fast Momentum Metroidvania Tech Demo
 [![NPM Version](https://img.shields.io/npm/v/@ujjwalvivek/journey-engine?style=for-the-badge&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@ujjwalvivek/journey-engine)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/ujjwalvivek/journey/deploy.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=Native)](https://github.com/ujjwalvivek/journey/actions)
-[![Publish Status](https://img.shields.io/github/actions/workflow/status/ujjwalvivek/journey/build.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=WASM)](https://github.com/ujjwalvivek/journey/actions)
+[![Publish Status](https://img.shields.io/github/actions/workflow/status/ujjwalvivek/journey/publish.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=WASM)](https://github.com/ujjwalvivek/journey/actions)
 [![License](https://img.shields.io/npm/l/@ujjwalvivek/journey-engine?style=for-the-badge&color=cb3837&logo=github)](https://www.npmjs.com/package/@ujjwalvivek/journey-engine)
 
 [![Yayy](./docs/media/v0.3.0.gif)](https://ujjwalvivek.com/blog/)

@@ -4,7 +4,7 @@
 [![Publish Status](https://img.shields.io/github/actions/workflow/status/ujjwalvivek/journey/publish.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=WASM)](https://github.com/ujjwalvivek/journey/actions)
 [![License](https://img.shields.io/npm/l/@ujjwalvivek/journey-engine?style=for-the-badge&color=cb3837&logo=github)](https://www.npmjs.com/package/@ujjwalvivek/journey-engine)
 
-[![Yayy](./docs/media/v0.3.0.gif)](https://ujjwalvivek.com/blog/)
+[![Yayy](./docs/media/latest.gif)](https://ujjwalvivek.com/blog/)
 
 ## Architectural Summary
 

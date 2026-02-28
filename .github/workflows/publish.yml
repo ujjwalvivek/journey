@@ -9,13 +9,54 @@ permissions:
   contents: write
   packages: write
   id-token: write
+  deployments: write
 
 jobs:
+  # --------------------------------------------------------
+  # JOB 0: Validate Version Consistency &  Release Tag
+  # --------------------------------------------------------
+  validate:
+    name: Validate Tag Version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/versioning/go.mod
+
+      - name: Assert Version Consistency with Tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          VERSIONS="$(go -C tools/versioning run . -print)"
+          echo "$VERSIONS"
+          CARGO_VERSION="$(printf '%s\n' "$VERSIONS" | awk -F= '$1=="cargo" { print $2 }')"
+          WEB_VERSION="$(printf '%s\n' "$VERSIONS" | awk -F= '$1=="web" { print $2 }')"
+
+          if [ -z "$CARGO_VERSION" ] || [ -z "$WEB_VERSION" ]; then
+            echo "Could not parse versions from tools/versioning -print output"
+            exit 1
+          fi
+
+          if [ "$TAG" != "$CARGO_VERSION" ]; then
+            echo "Tag mismatch: tag ($TAG) != cargo ($CARGO_VERSION)"
+            exit 1
+          fi
+
+          if [ "$TAG" != "$WEB_VERSION" ]; then
+            echo "Tag mismatch: tag ($TAG) != web ($WEB_VERSION)"
+            exit 1
+          fi
+
   # --------------------------------------------------------
   # JOB 1: Web Assembly & Package Registries
   # --------------------------------------------------------
   publish:
+    name: Build & Publish WASM Package to NPM and GitHub Packages
     runs-on: ubuntu-latest
+    needs: validate
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -64,6 +105,8 @@ jobs:
   # JOB 2: Native Desktop Builds (Windows & Linux)
   # --------------------------------------------------------
   build-native:
+    name: Build & Publish Native Binaries to GitHub Releases
+    needs: validate
     strategy:
       matrix:
         include:
@@ -110,3 +153,40 @@ jobs:
           files: |
             ${{ matrix.artifact_name }}
             ${{ matrix.artifact_name }}.sha256
+
+  # --------------------------------------------------------
+  # JOB 3: Cloudflare Pages Deployment
+  # --------------------------------------------------------
+  deploy:
+    runs-on: ubuntu-latest
+    needs: publish
+    name: Publish WASM Package to Journey Website
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: ./web
+        run: npm ci
+
+      - name: Build Project
+        working-directory: ./web
+        run: npm run build
+
+      - name: Deploy to Cloudflare
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: journey
+          directory: web/dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: main

@@ -1,10 +1,11 @@
 [package]
 name = "game"
-version = "0.3.2"
-edition = "2024"
-license = "MIT"
-description = "Journey Engine: A custom 2D game engine built with Rust and wGPU"
-repository = "https://github.com/ujjwalvivek/journey"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+keywords.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]

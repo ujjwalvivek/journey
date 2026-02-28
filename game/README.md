@@ -5,13 +5,14 @@ WebAssembly build of **Journey**, a custom 2D Metroidvania game engine built fro
 You can read the full technical breakdown of this engine's development at [ujjwalvivek.com](https://ujjwalvivek.com/blog).
 
 ## Tech Stack
+
 * **Core Engine:** Rust
 * **Compilation Target:** WebAssembly (`wasm32-unknown-unknown`)
 * **Web Integration:** `wasm-bindgen`, `web-sys`
-* **Audio:** Kira (Cross-platform audio synthesis)
 * **Frontend Wrapper:** TypeScript, Vite
 
 ## How to Load This Package
+
 If you want to run this specific historical version of the engine in a web project without installing local binaries, you can fetch it dynamically at runtime using an ES module import from the jsDelivr CDN.
 
 ```typescript

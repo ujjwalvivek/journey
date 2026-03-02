@@ -1,2 +1,2 @@
-/api     https://docs.rs/journey-engine     301
-/api/*   https://docs.rs/journey-engine     301
+/api     /docs/ENGINE_API.html     301
+/api/*   /docs/ENGINE_API.html     301

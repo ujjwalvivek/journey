@@ -205,7 +205,7 @@ impl LevelEditor {
                     .show_inside(ui, |ui| {
                         ui.label(egui::RichText::new("Minimap").size(label_size).strong());
                         ui.add_space(4.0 * ui_scale);
-                        egui::ScrollArea::both()
+                        egui::ScrollArea::horizontal()
                             .id_salt("minimap_scroll")
                             .show(ui, |ui| {
                                 let lines: Vec<&str> = self.text_buffer.lines().collect();
@@ -213,9 +213,9 @@ impl LevelEditor {
                                 let cols =
                                     lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
 
-                                let available_width = ui.available_size_before_wrap().x.max(1.0);
-                                let block_size = if cols > 0 {
-                                    (available_width / cols as f32).clamp(4.0, 24.0)
+                                let available_h = ui.available_height().max(1.0);
+                                let block_size = if rows > 0 {
+                                    (available_h / rows as f32).clamp(2.0, 12.0)
                                 } else {
                                     6.0
                                 };
@@ -260,47 +260,66 @@ impl LevelEditor {
                 egui::CentralPanel::default()
                     .frame(panel_frame)
                     .show_inside(ui, |ui| {
+                        ui.add_space(12.0 * ui_scale);
+                        ui.label(
+                            egui::RichText::new("ASCII Preview")
+                                .size(label_size)
+                                .strong(),
+                        );
+                        ui.add_space(4.0 * ui_scale);
+                        ui.horizontal_wrapped(|ui| {
+                            let legend = [
+                                ('#', "Wall"),
+                                ('=', "Floor"),
+                                ('_', "One-Way"),
+                                ('*', "Grapple"),
+                                ('@', "Spawn"),
+                                ('E', "Grunt"),
+                                ('S', "Sniper"),
+                                ('R', "Ronin"),
+                                ('O', "Exit"),
+                                ('.', "Air"),
+                            ];
+                            for (ch, name) in legend {
+                                ui.label(
+                                    egui::RichText::new(format!("{ch} = {name}"))
+                                        .monospace()
+                                        .size(10.0 * ui_scale)
+                                        .color(egui::Color32::from_rgb(170, 210, 220)),
+                                );
+                                ui.separator();
+                            }
+                        });
+                        ui.add_space(8.0);
+
+                        let num_rows = self.text_buffer.lines().count().max(1);
+
+                        let mut no_wrap_layouter =
+                            |ui: &egui::Ui, text: &dyn egui::TextBuffer, _wrap_width: f32| {
+                                let font_id = egui::TextStyle::Monospace.resolve(ui.style());
+                                let color = ui.visuals().widgets.inactive.text_color();
+                                let mut job = egui::text::LayoutJob::simple(
+                                    text.as_str().to_owned(),
+                                    font_id,
+                                    color,
+                                    f32::INFINITY,
+                                );
+                                job.wrap.max_width = f32::INFINITY;
+                                ui.fonts_mut(|f| f.layout_job(job))
+                            };
+
                         egui::ScrollArea::both()
                             .id_salt("text_editor_scroll")
                             .show(ui, |ui| {
-                                ui.add_space(12.0 * ui_scale);
-                                ui.label(
-                                    egui::RichText::new("ASCII Preview")
-                                        .size(label_size)
-                                        .strong(),
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.text_buffer)
+                                        .font(egui::TextStyle::Monospace)
+                                        .code_editor()
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(num_rows)
+                                        .layouter(&mut no_wrap_layouter)
+                                        .lock_focus(true),
                                 );
-                                ui.add_space(4.0 * ui_scale);
-                                ui.horizontal_wrapped(|ui| {
-                                    let legend = [
-                                        ('#', "Wall"),
-                                        ('=', "Floor"),
-                                        ('_', "One-Way"),
-                                        ('*', "Grapple"),
-                                        ('@', "Spawn"),
-                                        ('E', "Grunt"),
-                                        ('S', "Sniper"),
-                                        ('R', "Ronin"),
-                                        ('O', "Exit"),
-                                        ('.', "Air"),
-                                    ];
-                                    for (ch, name) in legend {
-                                        ui.label(
-                                            egui::RichText::new(format!("{ch} = {name}"))
-                                                .monospace()
-                                                .size(10.0 * ui_scale)
-                                                .color(egui::Color32::from_rgb(170, 210, 220)),
-                                        );
-                                        ui.separator();
-                                    }
-                                });
-                                ui.add_space(8.0);
-
-                                egui::TextEdit::multiline(&mut self.text_buffer)
-                                    .font(egui::TextStyle::Monospace)
-                                    .code_editor()
-                                    .desired_width(f32::INFINITY)
-                                    .lock_focus(true)
-                                    .show(ui);
                             });
                     });
             });

@@ -3,7 +3,7 @@
 A cross-platform 2D game engine built with Rust and wGPU.
 
 [![Crates.io](https://img.shields.io/crates/v/journey-engine.svg?style=for-the-badge&logo=rust&logoColor=white&label=crate)](https://crates.io/crates/journey-engine)
-[![Docs.rs](https://img.shields.io/docsrs/journey-engine?style=for-the-badge&logo=rust&logoColor=white&label=docs)](https://docs.rs/journey-engine)
+[![Docs.rs](https://img.shields.io/docsrs/journey-engine?style=for-the-badge&logo=rust&logoColor=white&label=docs)](https://journey.ujjwalvivek.com/docs/INTRODUCTION.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge&logo=github&logoColor=white&label=license)](LICENSE)
 
 ## Features
@@ -82,7 +82,7 @@ All mutable state flows through a single `Context<A>` struct where `A` is your g
 
 ## Documentation
 
-- [API Reference](https://docs.rs/journey-engine)
+- [API Reference](https://journey.ujjwalvivek.com/docs/INTRODUCTION.md)
 - [Engine API Guide](https://github.com/ujjwalvivek/journey/blob/main/docs/ENGINE_API.md)
 - [Technical Documentation](https://github.com/ujjwalvivek/journey/blob/main/docs/TECHNICAL_DOCUMENTATION.md)
 

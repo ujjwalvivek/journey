@@ -20,6 +20,9 @@ func (m model) updateCI(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cancelCmds()
 		m.exitErr = fmt.Errorf("aborted by user")
 		return m, tea.Quit
+	case "c":
+		m.ciJobsExpanded = !m.ciJobsExpanded
+		return m, nil
 	case "s":
 		m.ciRunning = false
 		m.finishedAt = time.Now()
@@ -43,6 +46,9 @@ func (m model) runCIWatcher(ch chan any) {
 		func(line string) {
 			ch <- ciLogEvent{line: line}
 		},
+		func(jobs []WorkflowJobInfo) {
+			ch <- ciJobsUpdatedEvent{jobs: jobs}
+		},
 	)
 	ch <- ciDoneEvent{info: info, err: err}
 	close(ch)
@@ -64,6 +70,8 @@ func (m model) handleCIEvents() (tea.Model, tea.Cmd) {
 			switch event := ev.(type) {
 			case ciLogEvent:
 				appendLimited(&m.ciLogLines, event.line, maxCILogs)
+			case ciJobsUpdatedEvent:
+				m.ciJobs = event.jobs
 			case ciDoneEvent:
 				m.ciRunning = false
 				m.ciInfo = event.info
@@ -98,6 +106,25 @@ func (m model) viewCI() string {
 	}
 	b.WriteString(fmt.Sprintf("  %s  %s\n\n", m.ctx.Tag, status))
 
+	if len(m.ciJobs) > 0 {
+		if m.ciJobsExpanded {
+			b.WriteString(dimStyle.Render("  Jobs") + dimStyle.Render("  c collapse") + "\n")
+			b.WriteString(dimStyle.Render("  "+strings.Repeat("─", w-4)) + "\n")
+			for _, job := range m.ciJobs {
+				icon := ciJobIcon(job)
+				name := job.Name
+				if len(name) > w-8 {
+					name = name[:w-11] + "..."
+				}
+				b.WriteString(fmt.Sprintf("  %s  %s\n", icon, dimStyle.Render(name)))
+			}
+			b.WriteString("\n")
+		} else {
+			b.WriteString(dimStyle.Render(fmt.Sprintf("  Jobs (%d)", len(m.ciJobs))) +
+				dimStyle.Render("  c expand") + "\n\n")
+		}
+	}
+
 	if m.ciInfo.URL != "" {
 		b.WriteString("  " + dimStyle.Render("url ") + m.ciInfo.URL + "\n\n")
 	}
@@ -107,5 +134,22 @@ func (m model) viewCI() string {
 
 	b.WriteString(renderLogBox(m.ciLogLines, m.logHeight(), w))
 
-	return m.renderFrame("CI Watch", b.String(), "s skip  q quit")
+	return m.renderFrame("CI Watch", b.String(), "c toggle jobs  s skip  q quit")
+}
+
+func ciJobIcon(job WorkflowJobInfo) string {
+	switch {
+	case job.Status == "completed" && job.Conclusion == "success":
+		return okStyle.Render("✓")
+	case job.Status == "completed" && (job.Conclusion == "failure" || job.Conclusion == "cancelled" || job.Conclusion == "timed_out"):
+		return errStyle.Render("✗")
+	case job.Status == "completed" && job.Conclusion == "skipped":
+		return dimStyle.Render("⊘")
+	case job.Status == "in_progress":
+		return titleStyle.Render("●")
+	case job.Status == "queued":
+		return warnStyle.Render("○")
+	default:
+		return dimStyle.Render("○")
+	}
 }

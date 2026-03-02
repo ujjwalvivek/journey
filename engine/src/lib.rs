@@ -58,12 +58,12 @@ pub struct SceneParams {
 impl Default for SceneParams {
     fn default() -> Self {
         Self {
-            background_color: [0.87, 0.98, 0.98], //* rgb(223, 249, 251)
+            background_color: [0.67, 0.42, 0.85], //* #AC6CDA
             seed: 42,
             fog_enabled: true,
             fog_density: 10.0,
             fog_opacity: 1.0,
-            fog_color: [0.51, 0.8, 0.87], //* rgb(130, 204, 221)
+            fog_color: [0.41, 0.36, 0.81], //* #685DCE
             fog_anim_speed: 0.5,
             time: 0.0,
         }

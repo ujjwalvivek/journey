@@ -13,7 +13,7 @@ use wgpu::util::DeviceExt;
 use crate::camera::Camera;
 use crate::texture::Texture;
 
-const MAX_SPRITES: usize = 1024;
+const MAX_SPRITES: usize = 4096;
 
 //? GPU blend mode for sprite rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

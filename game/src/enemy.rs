@@ -51,7 +51,7 @@ impl EnemyConfig {
                 stagger_ticks: ENEMY_STAGGER_TICKS,
                 aim_ticks: ENEMY_AIM_TICKS,
                 //* Yellow neon
-                accent_color: [1.0, 0.85, 0.0, 0.9],
+                accent_color: [0.055, 0.055, 0.41, 1.0], //* #0e0e68
             },
             EnemyType::Sniper => Self {
                 patrol_speed: 0.0, //* Snipers don't patrol
@@ -453,8 +453,8 @@ pub fn render_enemy(ctx: &mut engine::Context<JourneyAction>, enemy: &Enemy) {
 
     //* State-based color modulation on top of type accent
     let color = match enemy.state {
-        EnemyState::Staggered { .. } => [0.3, 0.3, 0.8, 0.9],
-        EnemyState::MeleeWindup { .. } => [1.0, 1.0, 1.0, 0.9],
+        EnemyState::Staggered { .. } => [1.0, 0.15, 0.1, 0.9], //* #ff4d00
+        EnemyState::MeleeWindup { .. } => [1.0, 1.0, 1.0, 0.9], //* Bright white flash
         EnemyState::Attacking => enemy.config.accent_color,
         EnemyState::Aim { .. } => {
             //* Pulsing aim indicator

@@ -217,9 +217,9 @@ impl Level {
 
     pub fn platform_color(platform_type: PlatformType) -> [f32; 4] {
         match platform_type {
-            PlatformType::Floor | PlatformType::Crate => [0.156, 0.156, 0.168, 1.0], //* rgb(40, 40, 43)
-            PlatformType::Wall => [0.156, 0.156, 0.168, 1.0], //* rgb(40, 40, 43)
-            PlatformType::OneWay => [0.44, 0.34, 0.89, 1.0],  //* rgb(113, 88, 226)
+            PlatformType::Floor | PlatformType::Crate => [0.055, 0.055, 0.41, 1.0], //* #0E0E68
+            PlatformType::Wall => [0.055, 0.055, 0.41, 1.0],                        //* #0E0E68
+            PlatformType::OneWay => [0.137, 0.282, 0.761, 1.0],                     //* #234DC2
         }
     }
 

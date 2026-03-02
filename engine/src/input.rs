@@ -144,6 +144,10 @@ pub struct InputState<A: GameAction> {
 
     #[cfg(not(target_arch = "wasm32"))]
     gamepad_buttons: Vec<bool>,
+    #[cfg(not(target_arch = "wasm32"))]
+    gamepad_start: bool,
+    #[cfg(not(target_arch = "wasm32"))]
+    gamepad_start_prev: bool,
     input_map: InputMap<A>,
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -164,6 +168,10 @@ impl<A: GameAction> InputState<A> {
             gamepad_axes: [0.0; 2],
             #[cfg(not(target_arch = "wasm32"))]
             gamepad_buttons: vec![false; action_count],
+            #[cfg(not(target_arch = "wasm32"))]
+            gamepad_start: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            gamepad_start_prev: false,
             input_map: InputMap::new(),
 
             #[cfg(not(target_arch = "wasm32"))]
@@ -177,6 +185,16 @@ impl<A: GameAction> InputState<A> {
             input_buffer: Vec::with_capacity(8),
             current_time: 0.0,
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn is_gamepad_start_just_pressed(&self) -> bool {
+        self.gamepad_start && !self.gamepad_start_prev
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn is_gamepad_start_just_pressed(&self) -> bool {
+        false
     }
 
     pub fn is_action_pressed(&self, action: A) -> bool {
@@ -322,12 +340,20 @@ impl<A: GameAction> InputState<A> {
                 while let Some(Event { event, .. }) = gilrs.next_event() {
                     match event {
                         EventType::ButtonPressed(button, _) => {
-                            if let Some(action) = self.input_map.get_action_for_button(button) {
+                            if button == Button::Start {
+                                self.gamepad_start = true;
+                            } else if let Some(action) =
+                                self.input_map.get_action_for_button(button)
+                            {
                                 self.gamepad_buttons[action.index()] = true;
                             }
                         }
                         EventType::ButtonReleased(button, _) => {
-                            if let Some(action) = self.input_map.get_action_for_button(button) {
+                            if button == Button::Start {
+                                self.gamepad_start = false;
+                            } else if let Some(action) =
+                                self.input_map.get_action_for_button(button)
+                            {
                                 self.gamepad_buttons[action.index()] = false;
                             }
                         }
@@ -354,7 +380,8 @@ impl<A: GameAction> InputState<A> {
         //? Buffer freshly pressed actions (for input buffering)
         let action_count = A::count();
         for i in 0..action_count {
-            if self.actions[i] && !self.actions_prev[i]
+            if self.actions[i]
+                && !self.actions_prev[i]
                 && let Some(action) = A::from_index(i)
             {
                 self.input_buffer.push(BufferedInput {
@@ -371,6 +398,10 @@ impl<A: GameAction> InputState<A> {
 
     pub fn end_frame(&mut self) {
         self.keys_prev = self.keys;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.gamepad_start_prev = self.gamepad_start;
+        }
     }
 
     //? Handle winit keyboard events (updates raw key state only).

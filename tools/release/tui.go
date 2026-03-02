@@ -55,6 +55,7 @@ type runnerDoneEvent struct {
 	ended  time.Time
 }
 type ciLogEvent struct{ line string }
+type ciJobsUpdatedEvent struct{ jobs []WorkflowJobInfo }
 type ciDoneEvent struct {
 	info WorkflowRunInfo
 	err  error
@@ -126,11 +127,13 @@ type model struct {
 	logLines         []string
 	runnerEvents     chan any
 
-	ciRunning  bool
-	ciInfo     WorkflowRunInfo
-	ciErr      error
-	ciLogLines []string
-	ciEvents   chan any
+	ciRunning      bool
+	ciInfo         WorkflowRunInfo
+	ciErr          error
+	ciLogLines     []string
+	ciEvents       chan any
+	ciJobs         []WorkflowJobInfo
+	ciJobsExpanded bool
 
 	summaryStats ReleaseStats
 	summaryReady bool
@@ -149,18 +152,19 @@ func newModel(ciTimeout time.Duration) model {
 
 	cmdCtx, cancel := context.WithCancel(context.Background())
 	return model{
-		screen:       screenLoading,
-		ciTimeout:    ciTimeout,
-		executor:     NewRealExecutor(),
-		cmdCtx:       cmdCtx,
-		cancelCmds:   cancel,
-		appStarted:   time.Now(),
-		spinner:      s,
-		versionIndex: 0,
-		modeIndex:    0,
-		customInput:  ti,
-		logLines:     make([]string, 0, 512),
-		ciLogLines:   make([]string, 0, 2048),
+		screen:         screenLoading,
+		ciTimeout:      ciTimeout,
+		executor:       NewRealExecutor(),
+		cmdCtx:         cmdCtx,
+		cancelCmds:     cancel,
+		appStarted:     time.Now(),
+		spinner:        s,
+		versionIndex:   0,
+		modeIndex:      0,
+		customInput:    ti,
+		logLines:       make([]string, 0, 512),
+		ciLogLines:     make([]string, 0, 2048),
+		ciJobsExpanded: true,
 	}
 }
 

@@ -113,7 +113,7 @@ func runHeadlessWithExecutor(exec CommandExecutor, version string, mode Approval
 		return nil
 	}
 
-	ciInfo, ciErr := monitorGitHubActions(context.Background(), exec, ctx.RepoRoot, tag, ciTimeout, defaultCIWatchPollInterval, nil)
+	ciInfo, ciErr := monitorGitHubActions(context.Background(), exec, ctx.RepoRoot, tag, ciTimeout, defaultCIWatchPollInterval, nil, nil)
 	if ciErr != nil {
 		fmt.Fprintf(os.Stderr, "ci: %v\n", ciErr)
 	}

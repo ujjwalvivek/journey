@@ -98,6 +98,7 @@ pub struct JourneyGame {
     pub(crate) level_editor: LevelEditor,
     vfx_bursts: Vec<VfxBurst>,
     using_gamepad: bool,
+    menu_index: usize,
     pub state: GameState,
     pub show_physics_tuner_in_game: bool,
     audio_assets: AudioAssets,
@@ -355,6 +356,7 @@ impl GameApp for JourneyGame {
             level_editor: LevelEditor::new(),
             vfx_bursts: Vec::new(),
             using_gamepad: false,
+            menu_index: 0,
             state: GameState::Splash {
                 timer: splash_duration,
             },
@@ -683,10 +685,14 @@ impl GameApp for JourneyGame {
         self.update_music_state(ctx); //* Manage music/ambience transitions based on game state
         self.dispatch_pending_audio(ctx); //* Dispatch any pending SFX events from this frame
 
-        //? Global Input Handling (Escape, F12)
-        if ctx.input.is_key_just_pressed(engine::Key::Escape) {
+        //? Global Input Handling (Escape, F12, Gamepad Start)
+        let pause_pressed = ctx.input.is_key_just_pressed(engine::Key::Escape)
+            || ctx.input.is_gamepad_start_just_pressed();
+
+        if pause_pressed {
             match self.state {
                 GameState::InGame => {
+                    self.menu_index = 0;
                     self.state = GameState::Paused;
                     return;
                 }
@@ -699,6 +705,7 @@ impl GameApp for JourneyGame {
                     return;
                 }
                 GameState::Options { return_state, .. } => {
+                    self.menu_index = 0;
                     self.state = match return_state {
                         MenuReturnState::StartMenu => GameState::StartMenu {
                             animation_progress: 1.0,
@@ -861,8 +868,19 @@ impl GameApp for JourneyGame {
             return;
         }
 
+        //? Frustum culling for platforms: skip if outside the camera view rect
+        let cam_left = ctx.camera_offset_x;
+        let cam_top = ctx.camera_offset_y;
+        let cam_right = cam_left + ctx.screen_width;
+        let cam_bottom = cam_top + ctx.screen_height;
+
         for platform in &self.level.platforms {
             let pos = platform.aabb.top_left();
+            let right = pos.x + platform.aabb.size.x;
+            let bottom = pos.y + platform.aabb.size.y;
+            if right < cam_left || pos.x > cam_right || bottom < cam_top || pos.y > cam_bottom {
+                continue;
+            }
             let color = level::Level::platform_color(platform.platform_type);
             ctx.draw_rect(pos, platform.aabb.size, color);
         }

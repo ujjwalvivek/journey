@@ -4,7 +4,7 @@
 use crate::input::JourneyAction;
 use crate::{GameState, JourneyGame, MenuReturnState, OptionsTab};
 use engine::egui;
-use engine::{AudioResponse, AudioTrack, Context};
+use engine::{AudioResponse, AudioTrack, Context, UiAudioEvent};
 
 pub(crate) fn menu_letterbox_rect(ctx: &egui::Context) -> egui::Rect {
     let screen_rect = ctx.viewport_rect();
@@ -30,13 +30,13 @@ impl JourneyGame {
             1.0
         };
         let color = egui::Color32::from_rgba_unmultiplied(
-            40,
-            40,
-            43,
-            (255.0 * alpha.clamp(0.0, 1.0)) as u8,
+            243,
+            204,
+            172,
+            (255.0 * alpha.clamp(0.0, 1.0)) as u8, //* rgb(243, 204, 172)
         );
 
-        let splash_bg = egui::Color32::from_rgb(223, 249, 251);
+        let splash_bg = egui::Color32::from_rgb(14, 14, 104); //* #0e0e68
         let letterbox = menu_letterbox_rect(ctx);
         ctx.layer_painter(egui::LayerId::new(
             egui::Order::Background,
@@ -67,9 +67,9 @@ impl JourneyGame {
                         egui::RichText::new("Journey Engine")
                             .size(16.0 * ui_scale)
                             .color(egui::Color32::from_rgba_unmultiplied(
-                                40,
-                                40,
-                                43,
+                                243,
+                                204,
+                                172,
                                 (180.0 * alpha.clamp(0.0, 1.0)) as u8,
                             )),
                     );
@@ -83,7 +83,7 @@ impl JourneyGame {
         engine_ctx: &mut Context<JourneyAction>,
         animation_progress: f32,
     ) {
-        let bg_color = egui::Color32::from_rgb(223, 249, 251);
+        let bg_color = egui::Color32::from_rgb(14, 14, 104); //* #0e0e68
         let letterbox = menu_letterbox_rect(ctx);
         ctx.layer_painter(egui::LayerId::new(
             egui::Order::Background,
@@ -93,7 +93,6 @@ impl JourneyGame {
 
         let letterbox_w = letterbox.width();
         let ui_scale = (letterbox.height() / 1080.0).clamp(0.3, 1.0);
-        let dark = egui::Color32::from_rgb(40, 40, 43);
 
         egui::Window::new("start_overlay")
             .title_bar(false)
@@ -117,7 +116,7 @@ impl JourneyGame {
                             egui::RichText::new("Untitled Game")
                                 .size(48.0 * ui_scale)
                                 .strong()
-                                .color(dark),
+                                .color(egui::Color32::from_rgb(243, 204, 172)),
                         );
                     });
 
@@ -125,11 +124,39 @@ impl JourneyGame {
 
                 if btn_alpha > 0.0 {
                     let btn_color = egui::Color32::from_rgba_unmultiplied(
-                        40,
-                        40,
-                        43,
+                        243,
+                        204,
+                        172,
                         (255.0 * btn_alpha) as u8,
                     );
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let menu_count: usize = 4;
+                    #[cfg(target_arch = "wasm32")]
+                    let menu_count: usize = 3;
+
+                    if engine_ctx
+                        .input
+                        .is_action_just_pressed(JourneyAction::MoveUp)
+                    {
+                        self.menu_index = if self.menu_index == 0 {
+                            menu_count - 1
+                        } else {
+                            self.menu_index - 1
+                        };
+                        engine_ctx.pending_ui_audio.push(UiAudioEvent::Hover);
+                    }
+                    if engine_ctx
+                        .input
+                        .is_action_just_pressed(JourneyAction::MoveDown)
+                    {
+                        self.menu_index = (self.menu_index + 1) % menu_count;
+                        engine_ctx.pending_ui_audio.push(UiAudioEvent::Hover);
+                    }
+                    if self.menu_index >= menu_count {
+                        self.menu_index = 0;
+                    }
+                    let confirmed = engine_ctx.input.is_action_just_pressed(JourneyAction::Jump);
 
                     egui::Area::new(egui::Id::new("start_buttons"))
                         .anchor(
@@ -143,37 +170,65 @@ impl JourneyGame {
                                 let font = 20.0 * ui_scale;
                                 let spacing = 8.0 * ui_scale;
 
-                                let menu_btn = |label: &str| {
+                                let focus_fill = egui::Color32::from_rgba_unmultiplied(
+                                    243,
+                                    204,
+                                    172,
+                                    (40.0 * btn_alpha) as u8,
+                                );
+                                let normal_stroke = egui::Stroke::new(
+                                    1.0,
+                                    egui::Color32::from_rgba_unmultiplied(
+                                        243,
+                                        204,
+                                        172,
+                                        (60.0 * btn_alpha) as u8,
+                                    ),
+                                );
+                                let focus_stroke = egui::Stroke::new(
+                                    2.0,
+                                    egui::Color32::from_rgba_unmultiplied(
+                                        243,
+                                        204,
+                                        172,
+                                        (160.0 * btn_alpha) as u8,
+                                    ),
+                                );
+
+                                let menu_btn = |label: &str, focused: bool| {
                                     egui::Button::new(
                                         egui::RichText::new(label).size(font).color(btn_color),
                                     )
-                                    .fill(egui::Color32::TRANSPARENT)
-                                    .stroke(egui::Stroke::new(
-                                        1.0,
-                                        egui::Color32::from_rgba_unmultiplied(
-                                            40,
-                                            40,
-                                            43,
-                                            (60.0 * btn_alpha) as u8,
-                                        ),
-                                    ))
+                                    .fill(if focused {
+                                        focus_fill
+                                    } else {
+                                        egui::Color32::TRANSPARENT
+                                    })
+                                    .stroke(if focused { focus_stroke } else { normal_stroke })
                                     .corner_radius(2.0)
                                 };
 
-                                if ui
-                                    .add_sized([btn_w, btn_h], menu_btn("Start Game"))
-                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio)
-                                    .clicked()
-                                {
+                                let mut idx = 0usize;
+
+                                let r = ui
+                                    .add_sized(
+                                        [btn_w, btn_h],
+                                        menu_btn("Start Game", self.menu_index == idx),
+                                    )
+                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio);
+                                if r.clicked() || (self.menu_index == idx && confirmed) {
                                     self.state = GameState::InGame;
                                 }
+                                idx += 1;
                                 ui.add_space(spacing);
 
-                                if ui
-                                    .add_sized([btn_w, btn_h], menu_btn("Level Editor"))
-                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio)
-                                    .clicked()
-                                {
+                                let r = ui
+                                    .add_sized(
+                                        [btn_w, btn_h],
+                                        menu_btn("Level Editor", self.menu_index == idx),
+                                    )
+                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio);
+                                if r.clicked() || (self.menu_index == idx && confirmed) {
                                     self.state = GameState::LevelEditor {
                                         return_state: MenuReturnState::StartMenu,
                                     };
@@ -186,27 +241,36 @@ impl JourneyGame {
                                         engine_ctx.screen_height,
                                     );
                                 }
+                                idx += 1;
                                 ui.add_space(spacing);
 
-                                if ui
-                                    .add_sized([btn_w, btn_h], menu_btn("Options"))
-                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio)
-                                    .clicked()
-                                {
+                                let r = ui
+                                    .add_sized(
+                                        [btn_w, btn_h],
+                                        menu_btn("Options", self.menu_index == idx),
+                                    )
+                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio);
+                                if r.clicked() || (self.menu_index == idx && confirmed) {
                                     self.state = GameState::Options {
                                         return_state: MenuReturnState::StartMenu,
                                         tab: OptionsTab::Graphics,
                                     };
                                 }
+                                idx += 1;
                                 ui.add_space(spacing);
 
                                 #[cfg(not(target_arch = "wasm32"))]
-                                if ui
-                                    .add_sized([btn_w, btn_h], menu_btn("Exit Game"))
-                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio)
-                                    .clicked()
                                 {
-                                    engine_ctx.request_exit = true;
+                                    let r = ui
+                                        .add_sized(
+                                            [btn_w, btn_h],
+                                            menu_btn("Exit Game", self.menu_index == idx),
+                                        )
+                                        .with_ui_sound(&mut engine_ctx.pending_ui_audio);
+                                    if r.clicked() || (self.menu_index == idx && confirmed) {
+                                        engine_ctx.request_exit = true;
+                                    }
+                                    let _ = idx;
                                 }
                             });
                         });
@@ -220,7 +284,7 @@ impl JourneyGame {
         engine_ctx: &mut Context<JourneyAction>,
     ) {
         let letterbox = menu_letterbox_rect(ctx);
-        let bg_color = egui::Color32::from_rgb(223, 249, 251);
+        let bg_color = egui::Color32::from_rgb(14, 14, 104); //* #0e0e68
         ctx.layer_painter(egui::LayerId::new(
             egui::Order::Background,
             egui::Id::new("paused_bg"),
@@ -228,7 +292,6 @@ impl JourneyGame {
         .rect_filled(letterbox, 0.0, bg_color);
 
         let ui_scale = (letterbox.height() / 1080.0).clamp(0.3, 1.0);
-        let dark = egui::Color32::from_rgb(40, 40, 43);
 
         egui::Window::new("paused_overlay")
             .title_bar(false)
@@ -246,7 +309,7 @@ impl JourneyGame {
                             egui::RichText::new("Paused")
                                 .size(36.0 * ui_scale)
                                 .strong()
-                                .color(dark),
+                                .color(egui::Color32::from_rgb(243, 204, 172)),
                         );
                         ui.add_space(32.0 * ui_scale);
 
@@ -254,43 +317,86 @@ impl JourneyGame {
                         let btn_h = 40.0 * ui_scale;
                         let font = 18.0 * ui_scale;
                         let spacing = 6.0 * ui_scale;
+                        let btn_color = egui::Color32::from_rgb(243, 204, 172);
 
-                        let menu_btn = |label: &str| {
-                            egui::Button::new(egui::RichText::new(label).size(font).color(dark))
-                                .fill(egui::Color32::TRANSPARENT)
-                                .stroke(egui::Stroke::new(
-                                    1.0,
-                                    egui::Color32::from_rgba_unmultiplied(40, 40, 43, 50),
-                                ))
-                                .corner_radius(2.0)
+                        let menu_count: usize = 4;
+                        if engine_ctx
+                            .input
+                            .is_action_just_pressed(JourneyAction::MoveUp)
+                        {
+                            self.menu_index = if self.menu_index == 0 {
+                                menu_count - 1
+                            } else {
+                                self.menu_index - 1
+                            };
+                            engine_ctx.pending_ui_audio.push(UiAudioEvent::Hover);
+                        }
+                        if engine_ctx
+                            .input
+                            .is_action_just_pressed(JourneyAction::MoveDown)
+                        {
+                            self.menu_index = (self.menu_index + 1) % menu_count;
+                            engine_ctx.pending_ui_audio.push(UiAudioEvent::Hover);
+                        }
+                        if self.menu_index >= menu_count {
+                            self.menu_index = 0;
+                        }
+                        let confirmed =
+                            engine_ctx.input.is_action_just_pressed(JourneyAction::Jump);
+
+                        let focus_fill = egui::Color32::from_rgba_unmultiplied(243, 204, 172, 40);
+                        let normal_stroke = egui::Stroke::new(
+                            1.0,
+                            egui::Color32::from_rgba_unmultiplied(243, 204, 172, 60),
+                        );
+                        let focus_stroke = egui::Stroke::new(
+                            2.0,
+                            egui::Color32::from_rgba_unmultiplied(243, 204, 172, 160),
+                        );
+
+                        let menu_btn = |label: &str, focused: bool| {
+                            egui::Button::new(
+                                egui::RichText::new(label).size(font).color(btn_color),
+                            )
+                            .fill(if focused {
+                                focus_fill
+                            } else {
+                                egui::Color32::TRANSPARENT
+                            })
+                            .stroke(if focused { focus_stroke } else { normal_stroke })
+                            .corner_radius(2.0)
                         };
 
-                        if ui
-                            .add_sized([btn_w, btn_h], menu_btn("Continue"))
-                            .with_ui_sound(&mut engine_ctx.pending_ui_audio)
-                            .clicked()
-                        {
+                        let mut idx = 0usize;
+
+                        let r = ui
+                            .add_sized([btn_w, btn_h], menu_btn("Continue", self.menu_index == idx))
+                            .with_ui_sound(&mut engine_ctx.pending_ui_audio);
+                        if r.clicked() || (self.menu_index == idx && confirmed) {
                             self.state = GameState::InGame;
                         }
+                        idx += 1;
                         ui.add_space(spacing);
 
-                        if ui
-                            .add_sized([btn_w, btn_h], menu_btn("Options"))
-                            .with_ui_sound(&mut engine_ctx.pending_ui_audio)
-                            .clicked()
-                        {
+                        let r = ui
+                            .add_sized([btn_w, btn_h], menu_btn("Options", self.menu_index == idx))
+                            .with_ui_sound(&mut engine_ctx.pending_ui_audio);
+                        if r.clicked() || (self.menu_index == idx && confirmed) {
                             self.state = GameState::Options {
                                 return_state: MenuReturnState::Paused,
                                 tab: OptionsTab::Graphics,
                             };
                         }
+                        idx += 1;
                         ui.add_space(spacing);
 
-                        if ui
-                            .add_sized([btn_w, btn_h], menu_btn("Level Editor"))
-                            .with_ui_sound(&mut engine_ctx.pending_ui_audio)
-                            .clicked()
-                        {
+                        let r = ui
+                            .add_sized(
+                                [btn_w, btn_h],
+                                menu_btn("Level Editor", self.menu_index == idx),
+                            )
+                            .with_ui_sound(&mut engine_ctx.pending_ui_audio);
+                        if r.clicked() || (self.menu_index == idx && confirmed) {
                             let start_pos = self.player.position();
                             let level_floor_y = self.level.death_y_threshold - 100.0;
                             self.level_editor.toggle(
@@ -303,17 +409,21 @@ impl JourneyGame {
                                 return_state: MenuReturnState::Paused,
                             };
                         }
+                        idx += 1;
                         ui.add_space(spacing);
 
-                        if ui
-                            .add_sized([btn_w, btn_h], menu_btn("Main Menu"))
-                            .with_ui_sound(&mut engine_ctx.pending_ui_audio)
-                            .clicked()
-                        {
+                        let r = ui
+                            .add_sized(
+                                [btn_w, btn_h],
+                                menu_btn("Main Menu", self.menu_index == idx),
+                            )
+                            .with_ui_sound(&mut engine_ctx.pending_ui_audio);
+                        if r.clicked() || (self.menu_index == idx && confirmed) {
                             self.state = GameState::StartMenu {
                                 animation_progress: 1.0,
                             };
                         }
+                        let _ = idx;
                     });
                 });
             });
@@ -329,7 +439,7 @@ impl JourneyGame {
     ) {
         let mut new_tab = current_tab;
         let letterbox = menu_letterbox_rect(ctx);
-        let menu_bg = egui::Color32::from_rgb(40, 40, 43);
+        let menu_bg = egui::Color32::from_rgb(14, 14, 104); //* #0e0e68
         ctx.layer_painter(egui::LayerId::new(
             egui::Order::Background,
             egui::Id::new("options_bg"),
@@ -351,6 +461,35 @@ impl JourneyGame {
             .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
                 ui.set_min_size(ui.available_size());
+
+                let tabs = [
+                    OptionsTab::Graphics,
+                    OptionsTab::Physics,
+                    OptionsTab::Controls,
+                    OptionsTab::Audio,
+                ];
+                let tab_count = tabs.len();
+                let cur_tab_idx = tabs.iter().position(|t| *t == current_tab).unwrap_or(0);
+
+                if engine_ctx
+                    .input
+                    .is_action_just_pressed(JourneyAction::MoveLeft)
+                {
+                    new_tab = tabs[if cur_tab_idx == 0 {
+                        tab_count - 1
+                    } else {
+                        cur_tab_idx - 1
+                    }];
+                    engine_ctx.pending_ui_audio.push(UiAudioEvent::TabChange);
+                }
+                if engine_ctx
+                    .input
+                    .is_action_just_pressed(JourneyAction::MoveRight)
+                {
+                    new_tab = tabs[(cur_tab_idx + 1) % tab_count];
+                    engine_ctx.pending_ui_audio.push(UiAudioEvent::TabChange);
+                }
+
                 ui.vertical_centered(|ui| {
                     ui.add_space(16.0 * ui_scale);
                     ui.label(
@@ -400,16 +539,43 @@ impl JourneyGame {
                 egui::TopBottomPanel::bottom("options_bottom")
                     .frame(egui::Frame::NONE.inner_margin(16.0 * ui_scale))
                     .show_inside(ui, |ui| {
+                        let back_focused = self.menu_index > 0;
+                        let confirmed =
+                            engine_ctx.input.is_action_just_pressed(JourneyAction::Jump);
+
+                        if engine_ctx
+                            .input
+                            .is_action_just_pressed(JourneyAction::MoveDown)
+                            || engine_ctx
+                                .input
+                                .is_action_just_pressed(JourneyAction::MoveUp)
+                        {
+                            self.menu_index = if back_focused { 0 } else { 1 };
+                            engine_ctx.pending_ui_audio.push(UiAudioEvent::Hover);
+                        }
+
+                        let back_btn =
+                            egui::Button::new(egui::RichText::new("Back").size(label_size))
+                                .fill(if back_focused {
+                                    egui::Color32::from_rgba_unmultiplied(243, 204, 172, 40)
+                                } else {
+                                    egui::Color32::TRANSPARENT
+                                })
+                                .stroke(if back_focused {
+                                    egui::Stroke::new(
+                                        2.0,
+                                        egui::Color32::from_rgba_unmultiplied(243, 204, 172, 160),
+                                    )
+                                } else {
+                                    egui::Stroke::NONE
+                                })
+                                .corner_radius(2.0);
+
                         ui.centered_and_justified(|ui| {
-                            if ui
-                                .add_sized(
-                                    [160.0 * ui_scale, 36.0 * ui_scale],
-                                    egui::Button::new(egui::RichText::new("Back").size(label_size))
-                                        .corner_radius(2.0),
-                                )
-                                .with_ui_sound(&mut engine_ctx.pending_ui_audio)
-                                .clicked()
-                            {
+                            let r = ui
+                                .add_sized([160.0 * ui_scale, 36.0 * ui_scale], back_btn)
+                                .with_ui_sound(&mut engine_ctx.pending_ui_audio);
+                            if r.clicked() || (back_focused && confirmed) {
                                 self.state = match return_state {
                                     MenuReturnState::StartMenu => GameState::StartMenu {
                                         animation_progress: 1.0,

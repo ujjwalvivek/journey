@@ -296,8 +296,8 @@ pub fn physics_tuner_ui(ui: &mut egui::Ui, cfg: &mut PhysicsConfig) {
 }
 
 pub fn controls_ui(ui: &mut egui::Ui, using_gamepad: bool) {
-    let dim = egui::Color32::from_rgba_unmultiplied(180, 180, 180, 200);
-    let val = egui::Color32::from_rgba_unmultiplied(230, 230, 230, 255);
+    let dim = egui::Color32::from_rgba_unmultiplied(243, 204, 172, 150); //* #F3CCAC
+    let val = egui::Color32::from_rgba_unmultiplied(243, 204, 172, 255);
 
     let controls: &[(&str, &str)] = if using_gamepad {
         &[
@@ -335,7 +335,7 @@ pub fn controls_ui(ui: &mut egui::Ui, using_gamepad: bool) {
                 "Keyboard & Mouse"
             };
             ui.colored_label(
-                egui::Color32::from_rgba_unmultiplied(200, 200, 200, 200),
+                egui::Color32::from_rgba_unmultiplied(243, 204, 172, 255),
                 egui::RichText::new(header).size(16.0).strong(),
             );
             ui.add_space(4.0);

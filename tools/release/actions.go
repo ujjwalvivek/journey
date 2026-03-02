@@ -43,6 +43,7 @@ func monitorGitHubActions(
 	timeout time.Duration,
 	pollInterval time.Duration,
 	onLog func(string),
+	onJobsUpdated func([]WorkflowJobInfo),
 ) (WorkflowRunInfo, error) {
 	emit := func(line string) {
 		if onLog != nil {
@@ -129,6 +130,39 @@ func monitorGitHubActions(
 
 	runID := strconv.FormatInt(found.DatabaseID, 10)
 	emit(fmt.Sprintf("Found run %s (%s)", runID, found.URL))
+
+	if onJobsUpdated != nil {
+		go func() {
+			for {
+				select {
+				case <-watchCtx.Done():
+					return
+				case <-time.After(pollInterval):
+				}
+				out, err := executor.Output(watchCtx, repoRoot, "gh", []string{
+					"run", "view", runID, "--json", "jobs",
+				})
+				if err != nil {
+					continue
+				}
+				var v struct {
+					Jobs []struct {
+						Name       string `json:"name"`
+						Status     string `json:"status"`
+						Conclusion string `json:"conclusion"`
+					} `json:"jobs"`
+				}
+				if json.Unmarshal([]byte(out), &v) != nil {
+					continue
+				}
+				jobs := make([]WorkflowJobInfo, len(v.Jobs))
+				for i, j := range v.Jobs {
+					jobs[i] = WorkflowJobInfo{Name: j.Name, Status: j.Status, Conclusion: j.Conclusion}
+				}
+				onJobsUpdated(jobs)
+			}
+		}()
+	}
 
 	_, watchErr := executor.RunStream(watchCtx, repoRoot, "gh", []string{"run", "watch", runID, "--exit-status"}, emit)
 	if watchErr != nil {

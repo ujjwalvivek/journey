@@ -85,5 +85,9 @@ pub fn setup_default_bindings(input: &mut engine::InputState<JourneyAction>) {
         map.bind_button(Button::RightTrigger, JourneyAction::Block);
         map.bind_button(Button::RightTrigger2, JourneyAction::Dash);
         map.bind_button(Button::LeftTrigger2, JourneyAction::Grapple);
+        map.bind_button(Button::DPadUp, JourneyAction::MoveUp);
+        map.bind_button(Button::DPadDown, JourneyAction::MoveDown);
+        map.bind_button(Button::DPadLeft, JourneyAction::MoveLeft);
+        map.bind_button(Button::DPadRight, JourneyAction::MoveRight);
     }
 }

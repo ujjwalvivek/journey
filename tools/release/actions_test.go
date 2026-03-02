@@ -31,6 +31,7 @@ func TestMonitorGitHubActionsTimeoutReturnsPartial(t *testing.T) {
 		40*time.Millisecond,
 		5*time.Millisecond,
 		nil,
+		nil,
 	)
 	if err == nil {
 		t.Fatalf("expected timeout error")

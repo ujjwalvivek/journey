@@ -1375,7 +1375,7 @@ dependencies = [
 
 [[package]]
 name = "journey-engine"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "bytemuck",
  "console_error_panic_hook",
@@ -1401,7 +1401,7 @@ dependencies = [
 
 [[package]]
 name = "journey-game"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "env_logger",
  "getrandom 0.2.17",

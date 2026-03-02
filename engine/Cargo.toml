@@ -1,11 +1,17 @@
 [package]
-name = "engine"
+name = "journey-engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme = "README.md"
+categories = ["game-engines", "game-development", "rendering", "wasm"]
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+name = "engine"
+crate-type = ["rlib"]
 
 [dependencies]
 noise = "0.8"

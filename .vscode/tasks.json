@@ -8,7 +8,7 @@
             "args": [
                 "run",
                 "-p",
-                "game"
+                "journey-game"
             ],
             "problemMatcher": [
                 "$rustc"
@@ -30,7 +30,7 @@
             "args": [
                 "run",
                 "-p",
-                "game",
+                "journey-game",
                 "--release"
             ],
             "problemMatcher": [
@@ -96,7 +96,7 @@
             "args": [
                 "build",
                 "-p",
-                "game"
+                "journey-game"
             ],
             "problemMatcher": [
                 "$rustc"
@@ -136,7 +136,7 @@
                 "-p",
                 "engine",
                 "-p",
-                "game",
+                "journey-game",
                 "--",
                 "-D",
                 "warnings"

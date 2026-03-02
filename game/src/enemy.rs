@@ -7,8 +7,9 @@
 *--------------------------------------------------------------------------------**/
 use crate::combat::fsm::{self, CombatPhase};
 use crate::combat::moves::{MoveDatabase, MoveId};
-use crate::config::*;
+use crate::config::{self, *};
 use crate::entity::{self, Entity};
+use crate::input::JourneyAction;
 use crate::projectile;
 use engine::{AABB, Vec2};
 
@@ -89,15 +90,42 @@ pub enum EnemyState {
 //? Ticks between shots after firing. Prevents spam.
 const SHOOT_COOLDOWN: u16 = 30;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnemyHandle {
+    pub index: usize,
+    pub generation: u32,
+}
+
+impl EnemyHandle {
+    pub const INVALID: Self = Self {
+        index: usize::MAX,
+        generation: 0,
+    };
+
+    pub fn resolve(self, enemies: &[Enemy]) -> Option<&Enemy> {
+        enemies
+            .get(self.index)
+            .filter(|e| e.generation == self.generation)
+    }
+
+    pub fn resolve_mut(self, enemies: &mut [Enemy]) -> Option<&mut Enemy> {
+        enemies
+            .get_mut(self.index)
+            .filter(|e| e.generation == self.generation)
+    }
+}
+
 pub struct Enemy {
     pub entity: Entity,
     pub state: EnemyState,
     pub enemy_type: EnemyType,
     pub config: EnemyConfig,
-    pub move_db: MoveDatabase,
     pub spawn_platform: Option<AABB>,
     pub spawn_position: Vec2,
     pub death_flash_timer: u16,
+    pub generation: u32,
+    //? Current fixed tick rate used to scale all tick-duration constants at runtime.
+    tick_rate: u32,
 }
 
 //? Enemy struct encapsulates both the Entity (physics + combat data) and the Enemy-specific AI state.
@@ -105,19 +133,22 @@ impl Enemy {
     pub fn new(position: Vec2, enemy_type: EnemyType) -> Self {
         let config = EnemyConfig::for_type(enemy_type);
         Self {
-            entity: Entity::new(
-                position,
-                Vec2::new(ENEMY_WIDTH, ENEMY_HEIGHT),
-                1.0,   //* 1-HP: any hit = dead
-                100.0, //* Posture kept for future Sekiro-style stagger depth
-            ),
+            entity: Entity::new(position, Vec2::new(ENEMY_WIDTH, ENEMY_HEIGHT), 1.0),
             state: EnemyState::Idle,
             enemy_type,
             config,
-            move_db: MoveDatabase::default(),
             spawn_platform: None,
             spawn_position: position,
             death_flash_timer: 0,
+            generation: 0,
+            tick_rate: 60,
+        }
+    }
+
+    pub fn handle(&self, index: usize) -> EnemyHandle {
+        EnemyHandle {
+            index,
+            generation: self.generation,
         }
     }
 
@@ -138,36 +169,41 @@ impl Enemy {
 
     //? Fixed-rate update: AI decision → combat FSM → physics.
     //? Returns a ShootEvent if the enemy fired this tick.
+    #[allow(clippy::too_many_arguments)]
     pub fn fixed_update(
         &mut self,
         dt: f32,
-        _tick: u64,
         player_pos: Vec2,
         platforms: &[AABB],
         walls: &[AABB],
+        gravity: f32,
+        max_fall_speed: f32,
+        move_db: &MoveDatabase,
+        tick_rate: u32,
     ) -> Option<ShootEvent> {
+        self.tick_rate = tick_rate;
         if self.state == EnemyState::Dead {
             self.death_flash_timer = self.death_flash_timer.saturating_sub(1);
             return None;
         }
 
         //? Update AI state (needs platforms for ledge detection, walls for LOS)
-        let shoot_event = self.update_ai(player_pos, platforms, walls);
+        let shoot_event = self.update_ai(player_pos, platforms, walls, move_db);
 
         //? Advance combat FSM if in a move
         if !self.entity.combat.is_idle() {
-            let transition = fsm::advance_combat_fsm(&mut self.entity.combat, &self.move_db);
+            let transition = fsm::advance_combat_fsm(&mut self.entity.combat, move_db);
             if let Some(new_phase) = transition {
                 match new_phase {
                     CombatPhase::Active => {
-                        entity::spawn_hitbox(&mut self.entity, &self.move_db);
+                        entity::spawn_hitbox(&mut self.entity, move_db);
                     }
                     CombatPhase::Recovery | CombatPhase::Idle => {
                         entity::despawn_hitbox(&mut self.entity);
                         self.entity.hit_landed = false;
                         if new_phase == CombatPhase::Idle {
                             self.state = EnemyState::Cooldown {
-                                timer: SHOOT_COOLDOWN,
+                                timer: config::scale_ticks(SHOOT_COOLDOWN, self.tick_rate),
                             };
                         }
                     }
@@ -176,14 +212,7 @@ impl Enemy {
             }
         }
 
-        //? Physics: gravity + platform collision
-        entity::fixed_update_physics(
-            &mut self.entity,
-            platforms,
-            dt,
-            110.0 * PIXELS_PER_UNIT,
-            40.0 * PIXELS_PER_UNIT,
-        );
+        entity::fixed_update_physics(&mut self.entity, platforms, dt, gravity, max_fall_speed);
 
         shoot_event
     }
@@ -193,6 +222,7 @@ impl Enemy {
         player_pos: Vec2,
         platforms: &[AABB],
         walls: &[AABB],
+        move_db: &MoveDatabase,
     ) -> Option<ShootEvent> {
         let distance = (player_pos.x - self.entity.position.x).abs();
         let vertical_dist = (player_pos.y - self.entity.position.y).abs();
@@ -214,7 +244,7 @@ impl Enemy {
                     if distance < self.config.melee_range && vertical_dist < ENEMY_HEIGHT {
                         self.entity.velocity.x = 0.0;
                         self.state = EnemyState::MeleeWindup {
-                            timer: ENEMY_MELEE_WINDUP_TICKS,
+                            timer: config::scale_ticks(ENEMY_MELEE_WINDUP_TICKS, self.tick_rate),
                         };
                         return None;
                     }
@@ -223,7 +253,7 @@ impl Enemy {
                     if self.config.aim_ticks > 0 {
                         self.entity.velocity.x = 0.0;
                         self.state = EnemyState::Aim {
-                            timer: self.config.aim_ticks,
+                            timer: config::scale_ticks(self.config.aim_ticks, self.tick_rate),
                         };
                         return None;
                     }
@@ -262,7 +292,7 @@ impl Enemy {
                         self.entity.position + Vec2::new((ENEMY_WIDTH / 2.0 + 2.0) * flip, 0.0);
 
                     self.state = EnemyState::Cooldown {
-                        timer: SHOOT_COOLDOWN,
+                        timer: config::scale_ticks(SHOOT_COOLDOWN, self.tick_rate),
                     };
 
                     return Some(ShootEvent {
@@ -280,11 +310,7 @@ impl Enemy {
                 self.entity.velocity.x = 0.0;
                 if timer <= 1 {
                     //? Execute melee attack via combat FSM
-                    fsm::begin_move(
-                        &mut self.entity.combat,
-                        MoveId::AttackHorizontal,
-                        &self.move_db,
-                    );
+                    fsm::begin_move(&mut self.entity.combat, MoveId::AttackHorizontal, move_db);
                     self.state = EnemyState::Attacking;
                 } else {
                     self.state = EnemyState::MeleeWindup { timer: timer - 1 };
@@ -349,7 +375,7 @@ impl Enemy {
         self.entity.velocity.x = 0.0;
 
         self.state = EnemyState::Staggered {
-            timer: self.config.stagger_ticks,
+            timer: config::scale_ticks(self.config.stagger_ticks, self.tick_rate),
         };
     }
 
@@ -360,7 +386,7 @@ impl Enemy {
         entity::despawn_hitbox(&mut self.entity);
         self.entity.velocity = Vec2::ZERO;
         self.state = EnemyState::Dead;
-        self.death_flash_timer = 6;
+        self.death_flash_timer = config::scale_ticks(6, self.tick_rate);
     }
 
     pub fn is_alive(&self) -> bool {
@@ -374,8 +400,12 @@ impl Enemy {
     //? Freeze stagger timer at max. helps keeps enemy staggered while player is grappling to them.
     pub fn freeze_stagger(&mut self) {
         if let EnemyState::Staggered { ref mut timer } = self.state {
-            *timer = self.config.stagger_ticks;
+            *timer = config::scale_ticks(self.config.stagger_ticks, self.tick_rate);
         }
+    }
+
+    pub fn set_tick_rate(&mut self, tick_rate: u32) {
+        self.tick_rate = tick_rate;
     }
 }
 
@@ -386,7 +416,7 @@ pub fn check_line_of_sight(from: Vec2, to: Vec2, walls: &[AABB]) -> bool {
     if dist < 1.0 {
         return true;
     }
-    let steps = (dist / 8.0) as usize + 1;
+    let steps = (dist / 4.0) as usize + 1;
     let probe_size = Vec2::new(2.0, 2.0);
 
     for i in 1..steps {
@@ -403,7 +433,7 @@ pub fn check_line_of_sight(from: Vec2, to: Vec2, walls: &[AABB]) -> bool {
 }
 
 //? Render the enemy as a colored rectangle with type-based accent.
-pub fn render_enemy(ctx: &mut engine::Context, enemy: &Enemy) {
+pub fn render_enemy(ctx: &mut engine::Context<JourneyAction>, enemy: &Enemy) {
     if !enemy.is_alive() {
         if enemy.death_flash_timer > 0 {
             let half = Vec2::new(ENEMY_WIDTH / 2.0, ENEMY_HEIGHT / 2.0);
@@ -455,7 +485,7 @@ pub fn render_enemy(ctx: &mut engine::Context, enemy: &Enemy) {
 }
 
 //? Render color-coded debug boxes for an entity.
-pub fn render_debug_boxes(ctx: &mut engine::Context, entity: &Entity) {
+pub fn render_debug_boxes(ctx: &mut engine::Context<JourneyAction>, entity: &Entity) {
     let t = 1.0; //* outline thickness
 
     //* Green: pushbox
@@ -490,7 +520,13 @@ pub fn render_debug_boxes(ctx: &mut engine::Context, entity: &Entity) {
     }
 }
 
-fn draw_outline(ctx: &mut engine::Context, pos: Vec2, size: Vec2, color: [f32; 4], t: f32) {
+fn draw_outline(
+    ctx: &mut engine::Context<JourneyAction>,
+    pos: Vec2,
+    size: Vec2,
+    color: [f32; 4],
+    t: f32,
+) {
     ctx.draw_rect(pos, Vec2::new(size.x, t), color); //* top
     ctx.draw_rect(
         pos + Vec2::new(0.0, size.y - t),
@@ -585,22 +621,42 @@ mod tests {
     #[test]
     fn dead_enemy_skips_update() {
         let mut e = Enemy::new(Vec2::new(100.0, 180.0), EnemyType::Grunt);
+        let db = MoveDatabase::default();
         e.kill();
-        let pos_before = e.entity.position; //* Position should not change, update was skipped
-        e.fixed_update(1.0 / 60.0, 1, Vec2::new(50.0, 180.0), &[], &[]);
+        let pos_before = e.entity.position;
+        e.fixed_update(
+            1.0 / 60.0,
+            Vec2::new(50.0, 180.0),
+            &[],
+            &[],
+            3520.0,
+            1280.0,
+            &db,
+            60,
+        );
         assert_eq!(e.entity.position, pos_before);
     }
 
     #[test]
     fn stagger_timer_decrements_to_idle() {
         let mut e = Enemy::new(Vec2::new(100.0, 180.0), EnemyType::Grunt);
+        let db = MoveDatabase::default();
         e.enter_stagger();
         let platform = make_platform();
         let player_far = Vec2::new(1000.0, 180.0);
 
         //? Tick through stagger duration
         for _ in 0..ENEMY_STAGGER_TICKS {
-            e.fixed_update(1.0 / 60.0, 0, player_far, &[platform], &[]);
+            e.fixed_update(
+                1.0 / 60.0,
+                player_far,
+                &[platform],
+                &[],
+                3520.0,
+                1280.0,
+                &db,
+                60,
+            );
         }
         assert_eq!(e.state, EnemyState::Idle);
     }
@@ -629,10 +685,20 @@ mod tests {
     fn aim_timer_fires_shoot_event() {
         let platform = make_platform();
         let mut e = Enemy::new(Vec2::new(100.0, 180.0), EnemyType::Grunt);
-        e.state = EnemyState::Aim { timer: 1 }; //* Last frame of aim
+        let db = MoveDatabase::default();
+        e.state = EnemyState::Aim { timer: 1 };
         let player_pos = Vec2::new(200.0, 180.0);
 
-        let result = e.fixed_update(1.0 / 60.0, 1, player_pos, &[platform], &[]);
+        let result = e.fixed_update(
+            1.0 / 60.0,
+            player_pos,
+            &[platform],
+            &[],
+            3520.0,
+            1280.0,
+            &db,
+            60,
+        );
         assert!(result.is_some(), "Should return a ShootEvent");
         //? After firing, should be in Cooldown
         assert!(matches!(e.state, EnemyState::Cooldown { .. }));

@@ -1,5 +1,5 @@
 /**----------------------------------------------------------------------------
-*!  Journey Engine: A cross-platform rendering engine.
+*!  A cross-platform 2D game engine built with Rust and wGPU.
 *?  Provides a trait-based game loop architecture where games implement
 *?  `GameApp` to define their logic, while the engine handles rendering,
 *?  input, and window management.
@@ -23,16 +23,21 @@ pub mod texture_manager;
 pub mod time;
 
 //* Re-export commonly used types
-pub use audio::{AudioEvent, AudioManager, AudioResponse, AudioTrack, load_sound_data};
+pub use animation::{AnimationDef, AnimationState};
+pub use audio::{AudioManager, AudioResponse, AudioTrack, UiAudioEvent, load_sound_data};
 pub use camera::ScreenShake;
 pub use context::Context;
 pub use glam::{Vec2, Vec3, Vec4};
-pub use input::{GameAction, InputState, Key};
+pub use input::{GameAction, InputMap, InputState, Key, MouseBinding};
 pub use kira::sound::static_sound::StaticSoundData;
 pub use math::move_towards;
 pub use physics::{AABB, BoxVolume, CollisionLayer, SweepResult};
 pub use sprite::BlendMode;
 pub use sprite::Rect;
+
+pub use egui;
+#[cfg(not(target_arch = "wasm32"))]
+pub use gilrs;
 pub use texture::Texture;
 pub use texture_manager::TextureHandle;
 pub use time::FixedTime;
@@ -66,26 +71,45 @@ impl Default for SceneParams {
 }
 
 pub trait GameApp: 'static {
+    //? The game's action enum
+    type Action: GameAction;
+
+    fn window_title() -> &'static str {
+        "Journey Engine"
+    }
+
+    fn window_icon() -> Option<&'static [u8]> {
+        None
+    }
+
+    fn wasm_ready_event() -> Option<&'static str> {
+        None
+    }
+
+    fn internal_resolution() -> (u32, u32) {
+        (640, 360)
+    }
+
     //* Initialize the game state. Called once when the engine starts.
     //? Use `ctx` to access screen dimensions and other initial state.
-    fn init(ctx: &mut Context) -> Self;
+    fn init(ctx: &mut Context<Self::Action>) -> Self;
 
     //* Fixed-rate update for deterministic game logic (physics, combat).
     //? Called at exactly `fixed_time.fixed_dt` intervals (default 60 Hz).
     //? `ctx.delta_time` equals `fixed_time.fixed_dt`. Use `fixed_time.tick`
     //? for frame-data combat windows instead of float accumulators.
-    fn fixed_update(&mut self, _ctx: &mut Context, _fixed_time: &time::FixedTime) {}
+    fn fixed_update(&mut self, _ctx: &mut Context<Self::Action>, _fixed_time: &time::FixedTime) {}
 
     //? Use for camera smoothing, interpolation, and non-gameplay-critical updates.
-    fn update(&mut self, ctx: &mut Context);
+    fn update(&mut self, ctx: &mut Context<Self::Action>);
 
     //* Render the game. Called every frame after `update`.
     //? Use `ctx.draw_sprite()` to submit draw calls. Sprites are rendered after the background but before the UI overlay.
-    fn render(&mut self, ctx: &mut Context);
+    fn render(&mut self, ctx: &mut Context<Self::Action>);
     fn ui(
         &mut self,
         _egui_ctx: &egui::Context,
-        _ctx: &mut Context,
+        _ctx: &mut Context<Self::Action>,
         _scene_params: &mut SceneParams,
     ) {
     }

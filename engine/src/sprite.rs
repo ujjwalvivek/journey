@@ -508,6 +508,13 @@ impl SpriteRenderer {
 
         //? Convert high-level Sprite definitions to low-level SpriteInstance data,
         //? partitioned by blend mode and then by texture ID.
+        if sprites.len() > MAX_SPRITES {
+            log::warn!(
+                "Sprite overflow: {} submitted, capped at {}",
+                sprites.len(),
+                MAX_SPRITES
+            );
+        }
         for sprite in sprites.iter().take(MAX_SPRITES) {
             if sprite.source_rect.is_some() {
                 let (tex_width, tex_height) = texture_sizes

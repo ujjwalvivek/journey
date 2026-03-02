@@ -1,10 +1,12 @@
 # Journey Engine, with a Fast Momentum Metroidvania Tech Demo
-[![NPM Version](https://img.shields.io/npm/v/@ujjwalvivek/journey-engine?style=for-the-badge&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@ujjwalvivek/journey-engine)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/ujjwalvivek/journey/deploy.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=Native)](https://github.com/ujjwalvivek/journey/actions)
-[![Publish Status](https://img.shields.io/github/actions/workflow/status/ujjwalvivek/journey/publish.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=WASM)](https://github.com/ujjwalvivek/journey/actions)
-[![License](https://img.shields.io/npm/l/@ujjwalvivek/journey-engine?style=for-the-badge&color=cb3837&logo=github)](https://www.npmjs.com/package/@ujjwalvivek/journey-engine)
 
-[![Yayy](./docs/media/latest.gif)](https://ujjwalvivek.com/blog/)
+[![NPM Version](https://img.shields.io/npm/v/@ujjwalvivek/journey-engine?style=for-the-badge&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@ujjwalvivek/journey-engine)
+[![Crates.io](https://img.shields.io/crates/v/journey-engine.svg?style=for-the-badge&logo=rust&logoColor=white&label=crate)](https://crates.io/crates/journey-engine)
+[![Docs.rs](https://img.shields.io/docsrs/journey-engine?style=for-the-badge&logo=rust&logoColor=white&label=docs)](https://docs.rs/journey-engine)
+[![Publish Status](https://img.shields.io/github/actions/workflow/status/ujjwalvivek/journey/publish.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=Publish)](https://github.com/ujjwalvivek/journey/actions)
+[![License](https://img.shields.io/github/license/ujjwalvivek/journey?style=for-the-badge&logo=github&logoColor=white&label=License)](LICENSE)
+
+[![Yayy](./docs/assets/latest.gif)](https://ujjwalvivek.com/blog/)
 
 ## Architectural Summary
 
@@ -31,7 +33,7 @@
   </tr>
   <tr>
     <td align="right"><img src="https://img.shields.io/badge/ARCHITECTURE-000000?style=for-the-badge" alt="Architecture"/></td>
-    <td><img src="https://img.shields.io/badge/Custom_ECS_with_a_custom_render_pipeline-FFFFFF?style=for-the-badge&logoColor=000000" alt="Custom ECS"/></td>
+    <td><img src="https://img.shields.io/badge/Data--Oriented_Trait--Driven_ECS with_custom_render_pipeline-FFFFFF?style=for-the-badge&logoColor=000000" alt="Data-Oriented"/></td>
   </tr>
   <tr>
     <td align="right"><img src="https://img.shields.io/badge/TARGET-000000?style=for-the-badge" alt="Target"/></td>
@@ -58,7 +60,7 @@
 
 ## A different take on Souls-like Metroidvania
 
-A custom high-performance 2D ECS game engine written in Rust + WGPU. Features AABB physics, focuses on precision platforming (*Hollow Knight*) and parry-based combat (*Sekiro*/*Nine Sols*) with a touch of a fast momentum based platformer (*Ghostrunner*). For a Metroidvania running at 60FPS (`Important Metric`) in a web browser, I want tight, deterministic, arcade physics, not realistic simulations. This project also serves as a "Living Proof of Work" for a **TPM** role.
+A custom high-performance 2D game engine written in Rust + WGPU. Features AABB physics, focuses on precision platforming (*Hollow Knight*) and parry-based combat (*Sekiro*/*Nine Sols*) with a touch of a fast momentum based platformer (*Ghostrunner*). For a Metroidvania running at 60FPS (`Important Metric`) in a web browser, I want tight, deterministic, arcade physics, not realistic simulations. This project also serves as a "Living Proof of Work" for a **TPM** role.
 
 It's all in the details. It’s not just about `Can I jump?` but `How does it feel to jump?` The secret sauce is in the mechanics that make the player feel powerful and responsive. Like coyote time, jump buffering, variable jump height, and a parry mechanic that rewards precise timing. The goal is to create a tech demo of the engine's capabilities by building a tight, fun, and responsive player controller that embodies the essence of a Fast Momentum Metroidvania gameplay.
 
@@ -79,21 +81,23 @@ The pipeline needs to be `Cross-Platform First`.
 ```bash
 Journey/
 ├── Cargo.toml          //* Workspace definition
-├── engine/             //* The reusable library (Product)
-│   ├── src/lib.rs      //* ECS, Renderer, Input, Physics
-│   └── Cargo.toml      //* Dependencies: wgpu, winit, bytemuck
+├── engine/             //* The reusable library (journey-engine on crates.io)
+│   ├── src/lib.rs      //* Public API surface, GameApp trait, re-exports
+│   └── Cargo.toml      //* Dependencies: wgpu, winit, kira, egui, glam, bytemuck
 ├── game/               //* The executable (Content)
 │    ├── pkg/           //* WASM Artifacts (Generated here)
-│    ├── src/main.rs    //* Level design, Player stats, Assets
-│    └── Cargo.toml     //* Dependencies: engine
+│    ├── src/main.rs    //* Native entry point
+│    ├── src/lib.rs     //* JourneyGame: GameApp implementation
+│    ├── src/input.rs   //* JourneyAction enum and key/gamepad bindings
+│    └── Cargo.toml     //* Dependencies: journey-engine (aliased as engine)
 └── web/                //* Vite Project for WASM distribution
     ├── src/            //* JavaScript Glue Code 
     ├── package.json    //* NPM Dependencies
-    └── vite.config.js  //* WASM Configuration
+    └── vite.config.ts  //* WASM Configuration
 
 ```
 
-This forces a clean API from `engine` to `game`. It also allows `engine` to be compiled as a separate crate for testing and documentation and prevents spaghetti coupling. All crates are to be `WASM-compatible`. `Pollster` for async main, and `Kira` for audio. More have been mentioned in the badges above.
+This forces a clean API from `engine` to `game`. It also allows the engine to be published as an independent crate (`journey-engine`) for reuse, testing, and documentation, and prevents spaghetti coupling. All crates are to be `WASM-compatible`. `Pollster` for async main, and `Kira` for audio. More have been mentioned in the badges above.
 
 ### Native: Build and Run
 
@@ -132,21 +136,18 @@ This forces a clean API from `engine` to `game`. It also allows `engine` to be c
 
 ## The Roadmap
 
-### Phase 1,2,3,4: Completed (Check the commit history for details)
+### v1.0.0 Released (Check the [Release Notes](RELEASE_NOTES.md) for details)
 
-### Phase 5: Wrapping up v1.0.0
+### Interim
 
 - [ ] Polish the level design to showcase the mechanics effectively.
-- [ ] Prepare the project with a technical documentation.
-- [ ] Document the `engine` API with examples for how to use it in `game`.
-- [ ] Write a post-mortem blog post detailing the development process, challenges faced, and lessons learned.
-- [ ] Plan for future features (e.g., particle system, audio engine, networking) and create a roadmap for version 2.0.
+- [ ] Plan for future features and create a roadmap for MVP2.
 
 ## Media and Resources
 
-![Crate Architecture](docs/media/architecture.png)
-![Gameloop](docs/media/gameloop.png)
-![Render Pipeline](docs/media/renderpipeline.png)
+![Crate Architecture](docs/assets/architecture.png)
+![Gameloop](docs/assets/gameloop.png)
+![Render Pipeline](docs/assets/renderpipeline.png)
 
 ## Docs
 
@@ -154,3 +155,6 @@ This forces a clean API from `engine` to `game`. It also allows `engine` to be c
 - [The Rust Book](https://doc.rust-lang.org/)
 - [wgpu Docs](https://docs.rs/wgpu/latest/wgpu/)
 - [Game Programming Patterns](http://gameprogrammingpatterns.com/)
+- [Engine API Guide](https://github.com/ujjwalvivek/journey/blob/main/docs/ENGINE_API.md)
+- [Technical Documentation](https://github.com/ujjwalvivek/journey/blob/main/docs/TECHNICAL_DOCUMENTATION.md)
+- [Post-Mortem Blog Post](https://ujjwalvivek.com/blog/)

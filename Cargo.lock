@@ -735,32 +735,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "engine"
-version = "0.3.2"
-dependencies = [
- "bytemuck",
- "console_error_panic_hook",
- "console_log",
- "egui",
- "egui-wgpu",
- "egui-winit",
- "env_logger",
- "gilrs",
- "glam 0.29.3",
- "image",
- "kira",
- "log",
- "noise",
- "pollster",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "web-time",
- "wgpu",
- "winit",
-]
-
-[[package]]
 name = "env_filter"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -957,22 +931,6 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
-]
-
-[[package]]
-name = "game"
-version = "0.3.2"
-dependencies = [
- "egui",
- "engine",
- "env_logger",
- "getrandom 0.2.17",
- "instant",
- "log",
- "pollster",
- "rand 0.8.5",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -1413,6 +1371,47 @@ checksum = "9afb3de4395d6b3e67a780b6de64b51c978ecf11cb9a462c66be7d4ca9039d33"
 dependencies = [
  "getrandom 0.3.4",
  "libc",
+]
+
+[[package]]
+name = "journey-engine"
+version = "0.3.2"
+dependencies = [
+ "bytemuck",
+ "console_error_panic_hook",
+ "console_log",
+ "egui",
+ "egui-wgpu",
+ "egui-winit",
+ "env_logger",
+ "gilrs",
+ "glam 0.29.3",
+ "image",
+ "kira",
+ "log",
+ "noise",
+ "pollster",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "journey-game"
+version = "0.3.2"
+dependencies = [
+ "env_logger",
+ "getrandom 0.2.17",
+ "instant",
+ "journey-engine",
+ "log",
+ "pollster",
+ "rand 0.8.5",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

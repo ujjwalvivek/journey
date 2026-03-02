@@ -3,8 +3,29 @@
 *?  Uses `include_bytes!` for cross-platform compatibility (native + WASM).
 *?  Sound data is loaded once during init and stored for the game lifetime.
 *----------------------------------------------------------------------**/
-use engine::audio::AudioEvent;
-use engine::{AudioManager, AudioTrack, StaticSoundData, load_sound_data};
+use engine::{AudioManager, AudioTrack, StaticSoundData, UiAudioEvent, load_sound_data};
+
+//? Game-specific one-shot audio events, produced during gameplay and drained per frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum AudioEvent {
+    Jump,
+    Land,
+    Dash,
+    Run,
+    WallGrab,
+    WallSlide,
+    Swing,
+    Hit,
+    Parry,
+    Stagger,
+    Death,
+    Respawn,
+    GrappleStatic,
+    GrappleEnemy,
+    Projectile,
+    ProjectileBounce,
+    RunStop,
+}
 
 pub struct AudioAssets {
     pub start_audio: Option<StaticSoundData>,
@@ -76,8 +97,7 @@ impl AudioAssets {
         }
     }
 
-    //? Dispatch a single `AudioEvent` to the appropriate sound data.
-    //? Called by the game's per-frame audio drain loop.
+    //? Dispatch a game-specific `AudioEvent` to the appropriate sound data.
     pub fn dispatch(&self, event: AudioEvent, audio: &mut AudioManager) {
         match event {
             AudioEvent::Run => {
@@ -109,15 +129,24 @@ impl AudioAssets {
             AudioEvent::GrappleEnemy => (&self.sfx_grapple_enemy, AudioTrack::Sfx),
             AudioEvent::Projectile => (&self.sfx_projectile, AudioTrack::Sfx),
             AudioEvent::ProjectileBounce => (&self.sfx_projectile_bounce, AudioTrack::Sfx),
-            AudioEvent::UiHover => (&self.ui_hover, AudioTrack::Ui),
-            AudioEvent::UiClick => (&self.ui_click, AudioTrack::Ui),
-            AudioEvent::UiTabChange => (&self.ui_tab_change, AudioTrack::Ui),
-            AudioEvent::UiCheckboxOn => (&self.ui_checkbox_on, AudioTrack::Ui),
-            AudioEvent::UiCheckboxOff => (&self.ui_checkbox_off, AudioTrack::Ui),
             AudioEvent::Run | AudioEvent::RunStop => return,
         };
         if let Some(sound) = data {
             audio.play_oneshot(sound, track);
+        }
+    }
+
+    //? Dispatch an engine-level `UiAudioEvent` to the appropriate UI sound.
+    pub fn dispatch_ui(&self, event: UiAudioEvent, audio: &mut AudioManager) {
+        let data: &Option<StaticSoundData> = match event {
+            UiAudioEvent::Hover => &self.ui_hover,
+            UiAudioEvent::Click => &self.ui_click,
+            UiAudioEvent::TabChange => &self.ui_tab_change,
+            UiAudioEvent::CheckboxOn => &self.ui_checkbox_on,
+            UiAudioEvent::CheckboxOff => &self.ui_checkbox_off,
+        };
+        if let Some(sound) = data {
+            audio.play_oneshot(sound, AudioTrack::Ui);
         }
     }
 }

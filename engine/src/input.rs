@@ -1,32 +1,50 @@
 /**----------------------------------------------------------------------
 *!  Action-based input handling for keyboard, mouse, and gamepad.
 *----------------------------------------------------------------------**/
-//? gilrs not supported on wasm
-//* so we conditionally compile gamepad code only for native targets.
 #[cfg(not(target_arch = "wasm32"))]
 use gilrs::{Axis, Button, Event, EventType, Gilrs};
 use std::collections::HashMap;
+use std::fmt::Debug;
 use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-//? Game actions (intent-based, decoupled from hardware).
-//* These are the "verbs" of the game that the player can perform.
-//* They are mapped to specific keybinds in `InputMap`, but game logic only cares about the actions.
+//? Trait for game-defined action enums.
+pub trait GameAction: Copy + Eq + Debug + 'static {
+    //* Total number of action variants.
+    fn count() -> usize;
+
+    //* Unique index for this action variant (0-based, must be < `count()`).
+    fn index(&self) -> usize;
+
+    //* Reconstruct an action from its index. Returns `None` for out-of-range indices.
+    fn from_index(index: usize) -> Option<Self>;
+
+    fn move_negative_x() -> Option<Self> {
+        None
+    }
+
+    fn move_positive_x() -> Option<Self> {
+        None
+    }
+
+    fn move_negative_y() -> Option<Self> {
+        None
+    }
+
+    fn move_positive_y() -> Option<Self> {
+        None
+    }
+}
+
+//? Mouse buttons that can be bound to game actions via `InputMap::bind_mouse()`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GameAction {
-    MoveLeft,
-    MoveRight,
-    MoveUp,
-    MoveDown,
-    Jump,
-    Attack,
-    Block,
-    Dash,
-    Grapple,
+pub enum MouseBinding {
+    Left,
+    Right,
+    Middle,
 }
 
 //? Keyboard key enumeration (hardware-specific).
-//* This is used for raw key state tracking and mapping to game actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Key {
     W,
@@ -65,125 +83,87 @@ impl Key {
     }
 }
 
-//? Input mapping between hardware and game actions.
-//* This allows for customizable keybinds and gamepad bindings.
-pub struct InputMap {
-    keyboard_map: HashMap<Key, GameAction>,
+//? Input mapping between hardware inputs and game actions.
+pub struct InputMap<A: GameAction> {
+    keyboard_map: HashMap<Key, A>,
+    mouse_map: HashMap<MouseBinding, A>,
     #[cfg(not(target_arch = "wasm32"))]
-    gamepad_map: HashMap<Button, GameAction>,
+    gamepad_map: HashMap<Button, A>,
 }
 
-//? Maps hardware inputs (keys, buttons) to game actions.
-//* Native builds support both keyboard and gamepad mappings, while WASM builds only support keyboard.
-impl Default for InputMap {
-    fn default() -> Self {
-        let mut keyboard_map = HashMap::new();
-
-        //? Default key bindings
-        keyboard_map.insert(Key::A, GameAction::MoveLeft);
-        keyboard_map.insert(Key::Left, GameAction::MoveLeft);
-        keyboard_map.insert(Key::D, GameAction::MoveRight);
-        keyboard_map.insert(Key::Right, GameAction::MoveRight);
-        keyboard_map.insert(Key::W, GameAction::MoveUp);
-        keyboard_map.insert(Key::Up, GameAction::MoveUp);
-        keyboard_map.insert(Key::S, GameAction::MoveDown);
-        keyboard_map.insert(Key::Down, GameAction::MoveDown);
-        keyboard_map.insert(Key::Space, GameAction::Jump);
-        keyboard_map.insert(Key::Shift, GameAction::Dash);
-        keyboard_map.insert(Key::Alt, GameAction::Grapple);
-
-        //? Default gamepad bindings (native only)
-        #[cfg(not(target_arch = "wasm32"))]
-        let gamepad_map = {
-            let mut map: HashMap<Button, GameAction> = HashMap::new();
-            map.insert(Button::South, GameAction::Jump);
-            map.insert(Button::West, GameAction::Attack);
-            map.insert(Button::RightTrigger, GameAction::Block);
-            map.insert(Button::RightTrigger2, GameAction::Dash);
-            map.insert(Button::LeftTrigger2, GameAction::Grapple);
-            map
-        };
-
-        //? Construct the InputMap with default bindings.
+impl<A: GameAction> InputMap<A> {
+    pub fn new() -> Self {
         Self {
-            keyboard_map,
+            keyboard_map: HashMap::new(),
+            mouse_map: HashMap::new(),
             #[cfg(not(target_arch = "wasm32"))]
-            gamepad_map,
+            gamepad_map: HashMap::new(),
         }
     }
-}
 
-//? Methods for managing input mappings.
-//* Allows for runtime customization of controls.
-impl InputMap {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    //? Bind a keyboard key to a game action.
-    pub fn bind_key(&mut self, key: Key, action: GameAction) {
+    pub fn bind_key(&mut self, key: Key, action: A) {
         self.keyboard_map.insert(key, action);
     }
 
-    //? Bind a gamepad button to a game action (native only).
+    pub fn bind_mouse(&mut self, button: MouseBinding, action: A) {
+        self.mouse_map.insert(button, action);
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn bind_button(&mut self, button: Button, action: GameAction) {
+    pub fn bind_button(&mut self, button: Button, action: A) {
         self.gamepad_map.insert(button, action);
     }
 
-    //? Get the game action bound to a keyboard key or a gamepad button, if any.
-    //* Unused in the current scenario, but provides flexibility for custom controls.
-    #[allow(dead_code)]
-    fn get_action_for_key(&self, key: Key) -> Option<GameAction> {
-        self.keyboard_map.get(&key).copied()
-    }
-
-    #[allow(dead_code)]
     #[cfg(not(target_arch = "wasm32"))]
-    fn get_action_for_button(&self, button: Button) -> Option<GameAction> {
+    fn get_action_for_button(&self, button: Button) -> Option<A> {
         self.gamepad_map.get(&button).copied()
     }
 }
 
-//? Input buffer struct: (action, time_pressed)
-//* Used for implementing "Input Buffering" (e.g., coyote time, jump buffering).
+impl<A: GameAction> Default for InputMap<A> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+//? Input buffer entry: (action, time_pressed).
 #[derive(Debug, Clone, Copy)]
-struct BufferedInput {
-    action: GameAction,
+struct BufferedInput<A: GameAction> {
+    action: A,
     time_pressed: f32,
 }
 
 //? Input state tracking keyboard, mouse, and gamepad.
-//* bool updated by winit event handlers.
-pub struct InputState {
+pub struct InputState<A: GameAction> {
     keys: [bool; 13],
     keys_prev: [bool; 13],
-    actions: [bool; 9],
-    actions_prev: [bool; 9],
+    actions: Vec<bool>,
+    actions_prev: Vec<bool>,
     mouse_buttons: [bool; 3],
     gamepad_axes: [f32; 2],
 
     #[cfg(not(target_arch = "wasm32"))]
-    gamepad_buttons: [bool; 9],
-    input_map: InputMap,
+    gamepad_buttons: Vec<bool>,
+    input_map: InputMap<A>,
 
     #[cfg(not(target_arch = "wasm32"))]
     gilrs: Option<Gilrs>,
-    input_buffer: Vec<BufferedInput>,
+    input_buffer: Vec<BufferedInput<A>>,
     current_time: f32,
 }
 
-impl InputState {
+impl<A: GameAction> InputState<A> {
     pub fn new() -> Self {
+        let action_count = A::count();
         Self {
             keys: [false; 13],
             keys_prev: [false; 13],
-            actions: [false; 9],
-            actions_prev: [false; 9],
+            actions: vec![false; action_count],
+            actions_prev: vec![false; action_count],
             mouse_buttons: [false; 3],
             gamepad_axes: [0.0; 2],
             #[cfg(not(target_arch = "wasm32"))]
-            gamepad_buttons: [false; 9],
+            gamepad_buttons: vec![false; action_count],
             input_map: InputMap::new(),
 
             #[cfg(not(target_arch = "wasm32"))]
@@ -199,26 +179,20 @@ impl InputState {
         }
     }
 
-    //? Check if a game action is currently active.
-    pub fn is_action_pressed(&self, action: GameAction) -> bool {
-        self.actions[action as usize]
+    pub fn is_action_pressed(&self, action: A) -> bool {
+        self.actions[action.index()]
     }
 
-    //? Check if a game action was just pressed this frame.
-    pub fn is_action_just_pressed(&self, action: GameAction) -> bool {
-        let idx = action as usize;
+    pub fn is_action_just_pressed(&self, action: A) -> bool {
+        let idx = action.index();
         self.actions[idx] && !self.actions_prev[idx]
     }
 
-    //? Check if a game action was pressed within the buffer window.
-    //* Returns true if the action was pressed within `buffer_window` set durations ago.
-    pub fn was_action_pressed_buffered(&self, action: GameAction, buffer_window: f32) -> bool {
-        //? Check current frame first (immediate)
+    pub fn was_action_pressed_buffered(&self, action: A, buffer_window: f32) -> bool {
         if self.is_action_just_pressed(action) {
             return true;
         }
 
-        //? Check buffer for recent presses
         for buffered in &self.input_buffer {
             if buffered.action == action {
                 let elapsed = self.current_time - buffered.time_pressed;
@@ -244,7 +218,6 @@ impl InputState {
         self.keys[idx] && !self.keys_prev[idx]
     }
 
-    //? Check if a mouse button is pressed.
     pub fn is_mouse_pressed(&self, button: MouseButton) -> bool {
         match button {
             MouseButton::Left => self.mouse_buttons[0],
@@ -258,10 +231,14 @@ impl InputState {
     pub fn get_move_x(&self) -> f32 {
         let mut value = 0.0;
 
-        if self.is_action_pressed(GameAction::MoveLeft) {
+        if let Some(left) = A::move_negative_x()
+            && self.is_action_pressed(left)
+        {
             value -= 1.0;
         }
-        if self.is_action_pressed(GameAction::MoveRight) {
+        if let Some(right) = A::move_positive_x()
+            && self.is_action_pressed(right)
+        {
             value += 1.0;
         }
 
@@ -276,10 +253,14 @@ impl InputState {
     pub fn get_move_y(&self) -> f32 {
         let mut value = 0.0;
 
-        if self.is_action_pressed(GameAction::MoveUp) {
+        if let Some(up) = A::move_negative_y()
+            && self.is_action_pressed(up)
+        {
             value -= 1.0;
         }
-        if self.is_action_pressed(GameAction::MoveDown) {
+        if let Some(down) = A::move_positive_y()
+            && self.is_action_pressed(down)
+        {
             value += 1.0;
         }
 
@@ -290,12 +271,10 @@ impl InputState {
         value
     }
 
-    //? Return true if any keyboard key or mouse button is currently down.
     pub fn any_keyboard_or_mouse(&self) -> bool {
         self.keys.iter().any(|&k| k) || self.mouse_buttons.iter().any(|&b| b)
     }
 
-    //? Return true if any gamepad axis or button is active.
     pub fn any_gamepad(&self) -> bool {
         if self.gamepad_axes.iter().any(|&a| a.abs() > 0.1) {
             return true;
@@ -313,23 +292,27 @@ impl InputState {
     //? actions from raw keyboard/mouse/gamepad, and polls gamepad events.
     //? Also buffers new pressed actions and cleans up old buffer entries.
     pub fn begin_frame(&mut self, delta_time: f32) {
-        self.actions_prev = self.actions;
+        self.actions_prev.clone_from(&self.actions);
         self.current_time += delta_time;
 
         //? Rebuild action state from raw keyboard state
-        self.actions = [false; 9];
+        self.actions.fill(false);
         for (&key, &action) in &self.input_map.keyboard_map {
             if self.keys[key as usize] {
-                self.actions[action as usize] = true;
+                self.actions[action.index()] = true;
             }
         }
 
-        //? Apply mouse button bindings
-        if self.mouse_buttons[0] {
-            self.actions[GameAction::Attack as usize] = true;
-        }
-        if self.mouse_buttons[1] {
-            self.actions[GameAction::Block as usize] = true;
+        //? Apply mouse button bindings from map
+        for (&binding, &action) in &self.input_map.mouse_map {
+            let idx = match binding {
+                MouseBinding::Left => 0,
+                MouseBinding::Right => 1,
+                MouseBinding::Middle => 2,
+            };
+            if self.mouse_buttons[idx] {
+                self.actions[action.index()] = true;
+            }
         }
 
         //? Poll and apply gamepad events (native only)
@@ -340,12 +323,12 @@ impl InputState {
                     match event {
                         EventType::ButtonPressed(button, _) => {
                             if let Some(action) = self.input_map.get_action_for_button(button) {
-                                self.gamepad_buttons[action as usize] = true;
+                                self.gamepad_buttons[action.index()] = true;
                             }
                         }
                         EventType::ButtonReleased(button, _) => {
                             if let Some(action) = self.input_map.get_action_for_button(button) {
-                                self.gamepad_buttons[action as usize] = false;
+                                self.gamepad_buttons[action.index()] = false;
                             }
                         }
                         EventType::AxisChanged(Axis::LeftStickX, value, _) => {
@@ -360,7 +343,8 @@ impl InputState {
             }
 
             //? Merge persistent gamepad button state into actions
-            for i in 0..9 {
+            let action_count = A::count();
+            for i in 0..action_count {
                 if self.gamepad_buttons[i] {
                     self.actions[i] = true;
                 }
@@ -368,22 +352,11 @@ impl InputState {
         }
 
         //? Buffer freshly pressed actions (for input buffering)
-        for action_idx in 0..9 {
-            let action = match action_idx {
-                0 => GameAction::MoveLeft,
-                1 => GameAction::MoveRight,
-                2 => GameAction::MoveUp,
-                3 => GameAction::MoveDown,
-                4 => GameAction::Jump,
-                5 => GameAction::Attack,
-                6 => GameAction::Block,
-                7 => GameAction::Dash,
-                8 => GameAction::Grapple,
-                _ => continue,
-            };
-
-            //? If action was just pressed, add to buffer
-            if self.actions[action_idx] && !self.actions_prev[action_idx] {
+        let action_count = A::count();
+        for i in 0..action_count {
+            if self.actions[i] && !self.actions_prev[i]
+                && let Some(action) = A::from_index(i)
+            {
                 self.input_buffer.push(BufferedInput {
                     action,
                     time_pressed: self.current_time,
@@ -421,15 +394,12 @@ impl InputState {
         }
     }
 
-    //? Get mutable access to the input map for custom bindings.
-    pub fn input_map_mut(&mut self) -> &mut InputMap {
+    pub fn input_map_mut(&mut self) -> &mut InputMap<A> {
         &mut self.input_map
     }
 }
 
-//? Default implementation for InputState
-//? Initializes all states to false and sets up default mappings.
-impl Default for InputState {
+impl<A: GameAction> Default for InputState<A> {
     fn default() -> Self {
         Self::new()
     }

@@ -8,6 +8,8 @@
 use crate::combat::fsm::CombatPhase;
 use crate::combat::moves::MoveId;
 use crate::config::*;
+use crate::input::JourneyAction;
+use crate::enemy::EnemyHandle;
 use crate::entity::Entity;
 use engine::{AABB, Vec2};
 
@@ -22,8 +24,8 @@ pub struct Projectile {
     pub position: Vec2,
     pub velocity: Vec2,
     pub spawn_origin: Vec2,
-    //? Index into the `enemies` Vec. Used to stagger the source on parry.
-    pub source_enemy_idx: usize,
+    //? Handle to the source enemy. Used to stagger the source on parry.
+    pub source: EnemyHandle,
     pub alive: bool,
     pub color: [f32; 4],
     pub bounces: u8,
@@ -34,7 +36,7 @@ impl Projectile {
     pub fn new(
         origin: Vec2,
         target: Vec2,
-        source_enemy_idx: usize,
+        source: EnemyHandle,
         speed: f32,
         color: [f32; 4],
     ) -> Self {
@@ -50,7 +52,7 @@ impl Projectile {
             position: origin,
             velocity: dir * speed,
             spawn_origin: origin,
-            source_enemy_idx,
+            source,
             alive: true,
             color,
             bounces: 0,
@@ -100,11 +102,11 @@ impl ProjectilePool {
         &mut self,
         origin: Vec2,
         target: Vec2,
-        source_enemy_idx: usize,
+        source: EnemyHandle,
         speed: f32,
         color: [f32; 4],
     ) {
-        let proj = Projectile::new(origin, target, source_enemy_idx, speed, color);
+        let proj = Projectile::new(origin, target, source, speed, color);
 
         //? Reuse a dead slot if available
         if let Some(slot) = self.projectiles.iter_mut().find(|p| !p.alive) {
@@ -123,7 +125,7 @@ impl ProjectilePool {
     //? Collide projectiles with solid walls/floors (NOT one-way platforms).
     //? On first contact the bullet ricochets (reflects velocity); on second it despawns.
     //? Returns the number of ricochets that occurred (for audio).
-    pub fn collide_walls(&mut self, walls: &[AABB]) -> u32 {
+    pub fn collide_walls(&mut self, walls: &[AABB], dt: f32) -> u32 {
         let mut bounce_count = 0u32;
         for proj in &mut self.projectiles {
             if !proj.alive {
@@ -150,7 +152,7 @@ impl ProjectilePool {
                             proj.velocity.y = -proj.velocity.y;
                         }
                         //? Nudge out of the wall to prevent double-bounce
-                        proj.position += proj.velocity * (1.0 / 60.0);
+                        proj.position += proj.velocity * dt;
                         proj.bounces += 1;
                         bounce_count += 1;
                     }
@@ -176,8 +178,8 @@ impl ProjectilePool {
     }
 
     //? Check if any alive projectile is deflected by the player's active parry.
-    //? Returns the `source_enemy_idx` of the deflected projectile's source, if any.
-    pub fn check_parry_deflect(&mut self, player: &Entity) -> Option<usize> {
+    //? Returns the `EnemyHandle` of the deflected projectile's source, if any.
+    pub fn check_parry_deflect(&mut self, player: &Entity) -> Option<EnemyHandle> {
         //? Only check if player is in active parry phase
         if player.combat.current_move != Some(MoveId::Parry)
             || player.combat.phase != CombatPhase::Active
@@ -191,7 +193,7 @@ impl ProjectilePool {
                 continue;
             }
             if proj.aabb().check_collision(&parry_box) {
-                let source = proj.source_enemy_idx;
+                let source = proj.source;
                 proj.alive = false;
                 return Some(source);
             }
@@ -212,7 +214,7 @@ pub fn parry_aabb(entity: &Entity) -> AABB {
 }
 
 //? Render all alive projectiles as neon-colored squares.
-pub fn render_projectiles(ctx: &mut engine::Context, pool: &ProjectilePool) {
+pub fn render_projectiles(ctx: &mut engine::Context<JourneyAction>, pool: &ProjectilePool) {
     let half = PROJECTILE_SIZE / 2.0;
     for proj in &pool.projectiles {
         if !proj.alive {
@@ -236,8 +238,14 @@ mod tests {
             Vec2::new(100.0, 100.0),
             Vec2::new(PLAYER_WIDTH, PLAYER_HEIGHT),
             1.0,
-            100.0,
         )
+    }
+
+    fn handle(index: usize) -> EnemyHandle {
+        EnemyHandle {
+            index,
+            generation: 0,
+        }
     }
 
     #[test]
@@ -245,7 +253,7 @@ mod tests {
         let mut proj = Projectile::new(
             Vec2::new(0.0, 0.0),
             Vec2::new(100.0, 0.0),
-            0,
+            handle(0),
             200.0,
             [1.0, 1.0, 0.0, 1.0],
         );
@@ -262,7 +270,7 @@ mod tests {
         let mut proj = Projectile::new(
             Vec2::new(0.0, 0.0),
             Vec2::new(1.0, 0.0),
-            0,
+            handle(0),
             10000.0, //* Very fast   will exceed range in one tick
             [1.0, 1.0, 0.0, 1.0],
         );
@@ -276,22 +284,22 @@ mod tests {
         pool.spawn(
             Vec2::new(10.0, 10.0),
             Vec2::new(20.0, 10.0),
-            0,
+            handle(0),
             200.0,
             [1.0, 0.0, 0.0, 1.0],
         );
 
         //? Wall at x=15   directly in the path
         let wall = AABB::new(Vec2::new(15.0, 10.0), Vec2::new(10.0, 10.0));
-        pool.collide_walls(&[wall]);
+        pool.collide_walls(&[wall], 1.0 / 60.0);
 
         //? Initial position (10,10) already overlaps wall at center=15 ± 5
         assert_eq!(pool.alive_count(), 1);
         assert_eq!(pool.projectiles[0].bounces, 1); //* First collision = ricochet (bounces 0 → 1)
-        pool.collide_walls(&[wall]); //* Second collision = despawn
+        pool.collide_walls(&[wall], 1.0 / 60.0); //* Second collision = despawn
         //? Might still be alive if nudged out of wall; force position back in
         pool.projectiles[0].position = Vec2::new(10.0, 10.0);
-        pool.collide_walls(&[wall]);
+        pool.collide_walls(&[wall], 1.0 / 60.0);
         assert_eq!(pool.alive_count(), 0);
     }
 
@@ -301,7 +309,7 @@ mod tests {
         pool.spawn(
             Vec2::new(10.0, 10.0),
             Vec2::new(20.0, 10.0), //* Moving right
-            0,
+            handle(0),
             200.0,
             [1.0, 0.0, 0.0, 1.0],
         );
@@ -309,7 +317,7 @@ mod tests {
 
         //? Wall to the right
         let wall = AABB::new(Vec2::new(15.0, 10.0), Vec2::new(10.0, 10.0));
-        pool.collide_walls(&[wall]);
+        pool.collide_walls(&[wall], 1.0 / 60.0);
 
         //? X velocity should be reversed after ricochet
         assert!(pool.projectiles[0].alive);
@@ -330,7 +338,7 @@ mod tests {
         pool.spawn(
             player.position,
             Vec2::new(player.position.x + 10.0, player.position.y),
-            0,
+            handle(0),
             200.0,
             [1.0, 0.0, 0.0, 1.0],
         );
@@ -354,13 +362,13 @@ mod tests {
         pool.spawn(
             parry_pos,
             Vec2::new(parry_pos.x + 10.0, parry_pos.y),
-            42, //* source enemy index
+            handle(42),
             200.0,
             [1.0, 0.0, 0.0, 1.0],
         );
 
         let result = pool.check_parry_deflect(&player);
-        assert_eq!(result, Some(42));
+        assert_eq!(result, Some(handle(42)));
         assert_eq!(pool.alive_count(), 0);
     }
 
@@ -376,7 +384,7 @@ mod tests {
         pool.spawn(
             player.position,
             Vec2::new(player.position.x + 10.0, player.position.y),
-            0,
+            handle(0),
             200.0,
             [1.0, 0.0, 0.0, 1.0],
         );
@@ -392,7 +400,7 @@ mod tests {
         pool.spawn(
             Vec2::ZERO,
             Vec2::new(1.0, 0.0),
-            0,
+            handle(0),
             100.0,
             [1.0, 0.0, 0.0, 1.0],
         ); //* Kill the projectile
@@ -402,13 +410,13 @@ mod tests {
         pool.spawn(
             Vec2::new(50.0, 50.0),
             Vec2::new(60.0, 50.0),
-            1,
+            handle(1),
             100.0,
             [0.0, 1.0, 0.0, 1.0],
         );
 
         assert_eq!(pool.projectiles.len(), 1); //* Same slot reused
         assert!(pool.projectiles[0].alive);
-        assert_eq!(pool.projectiles[0].source_enemy_idx, 1);
+        assert_eq!(pool.projectiles[0].source, handle(1));
     }
 }

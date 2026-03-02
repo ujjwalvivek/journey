@@ -4,8 +4,17 @@
  *?  Constants used across modules via wildcard import
  *?  (`use config::*`) for easy access and maintainability.
  *--------------------------------------------------------------------------------**/
-//* All spatial values are in pixels/sec. Timing values are in fixed ticks (60Hz).
+//* All spatial values are in pixels/sec. Timing values are in fixed ticks (60Hz base rate).
 pub const PIXELS_PER_UNIT: f32 = 16.0;
+
+//? 6 ticks at 60Hz → 3 ticks at 30Hz (same 100ms wall-clock duration).
+pub fn scale_ticks(base: u16, tick_rate: u32) -> u16 {
+    const BASE: u32 = 60;
+    if tick_rate == BASE {
+        return base;
+    }
+    ((base as u32 * tick_rate + BASE / 2) / BASE).max(1) as u16
+}
 
 //* Dash parameters.
 pub const DASH_SPEED: f32 = 50.0 * PIXELS_PER_UNIT;
@@ -74,9 +83,6 @@ pub const GRAVITY: f32 = 110.0 * PIXELS_PER_UNIT;
 pub const ACCELERATION: f32 = 500.0 * PIXELS_PER_UNIT;
 pub const GROUND_DECEL: f32 = 500.0 * PIXELS_PER_UNIT;
 pub const AIR_DECEL: f32 = 40.0 * PIXELS_PER_UNIT;
-
-//* Default player stats
-pub type PlayerStats = PhysicsConfig;
 
 //? Runtime-tunable physics configuration.
 #[derive(Debug, Clone)]

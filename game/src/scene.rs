@@ -8,7 +8,8 @@ use crate::config::PhysicsConfig;
 use crate::enemy::Enemy;
 use crate::player::PlayerState;
 use engine::SceneParams;
-use engine::{AudioEvent, AudioResponse};
+use engine::egui;
+use engine::{AudioResponse, UiAudioEvent};
 
 #[derive(Debug, Clone, Default)]
 pub struct GameScene {
@@ -41,7 +42,7 @@ pub struct DebugUiParams<'a> {
     pub physics_config: &'a mut PhysicsConfig,
     pub using_gamepad: bool, //* Preserve this bool for later UI updates INGAME
     pub show_physics_tuner_in_game: bool,
-    pub pending_audio: &'a mut Vec<AudioEvent>,
+    pub pending_audio: &'a mut Vec<UiAudioEvent>,
 }
 
 //? Keeps the game wrapper in sync with engine-owned `SceneParams`.

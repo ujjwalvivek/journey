@@ -49,28 +49,33 @@ pub struct Level {
     pub exit_spawn: Vec2,
     pub ceiling_y_threshold: f32,
     pub death_y_threshold: f32,
+    cached_solid: Vec<AABB>,
+    cached_one_way: Vec<AABB>,
+    cached_wall: Vec<AABB>,
+    cached_all: Vec<AABB>,
 }
 
 //? A static level to test core mechanics.
 impl Level {
+    //? Load level text from disk (native) or localStorage (WASM),
+    //? falling back to the embedded default.
+    pub fn load_level_text() -> String {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            std::fs::read_to_string("game/assets/level/world.txt")
+                .unwrap_or_else(|_| include_str!("../assets/level/world.txt").to_string())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            web_sys::window()
+                .and_then(|w| w.local_storage().ok().flatten())
+                .and_then(|s| s.get_item("world.txt").ok().flatten())
+                .unwrap_or_else(|| include_str!("../assets/level/world.txt").to_string())
+        }
+    }
+
     pub fn new(_screen_width: f32, screen_height: f32) -> Self {
-        let level_data = {
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                std::fs::read_to_string("game/assets/level/world.txt")
-                    .unwrap_or_else(|_| include_str!("../assets/level/world.txt").to_string())
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                let window = web_sys::window().unwrap();
-                let storage = window.local_storage().unwrap().unwrap();
-                if let Ok(Some(saved)) = storage.get_item("world.txt") {
-                    saved
-                } else {
-                    include_str!("../assets/level/world.txt").to_string()
-                }
-            }
-        };
+        let level_data = Self::load_level_text();
 
         let mut level = Self {
             platforms: Vec::new(),
@@ -81,6 +86,10 @@ impl Level {
             ceiling_y_threshold: 0.0,
             screen_height,
             death_y_threshold: 0.0,
+            cached_solid: Vec::new(),
+            cached_one_way: Vec::new(),
+            cached_wall: Vec::new(),
+            cached_all: Vec::new(),
         };
 
         level.reload_from_str(&level_data, screen_height);
@@ -160,10 +169,29 @@ impl Level {
         }
 
         self.screen_height = screen_height;
+        self.rebuild_caches();
     }
 
-    //? Update level (handles screen resize)
-    pub fn update(&mut self, _player_x: f32, _screen_width: f32, screen_height: f32) {
+    fn rebuild_caches(&mut self) {
+        self.cached_solid.clear();
+        self.cached_one_way.clear();
+        self.cached_wall.clear();
+        self.cached_all.clear();
+        for p in &self.platforms {
+            self.cached_all.push(p.aabb);
+            match p.platform_type {
+                PlatformType::OneWay => self.cached_one_way.push(p.aabb),
+                PlatformType::Wall => {
+                    self.cached_solid.push(p.aabb);
+                    self.cached_wall.push(p.aabb);
+                }
+                _ => self.cached_solid.push(p.aabb),
+            }
+        }
+    }
+
+    //? Returns the vertical delta applied to world geometry, if a resize occurred.
+    pub fn update(&mut self, _player_x: f32, _screen_width: f32, screen_height: f32) -> f32 {
         if (self.screen_height - screen_height).abs() > 1.0 {
             let dy = (screen_height - 13.0) - (self.screen_height - 13.0);
             for platform in &mut self.platforms {
@@ -180,9 +208,10 @@ impl Level {
             self.ceiling_y_threshold += dy;
             self.death_y_threshold += dy;
             self.screen_height = screen_height;
-
-            //* Level 1 is static - no procedural generation or cleanup needed
-            //* but this is where it would go for an infinite level.
+            self.rebuild_caches();
+            dy
+        } else {
+            0.0
         }
     }
 
@@ -194,31 +223,20 @@ impl Level {
         }
     }
 
-    //? Collect wall-only platform AABBs (for wall-grab filtering).
-    pub fn wall_aabbs(&self) -> Vec<AABB> {
-        self.platforms
-            .iter()
-            .filter(|p| p.platform_type == PlatformType::Wall)
-            .map(|p| p.aabb)
-            .collect()
+    pub fn wall_aabbs(&self) -> &[AABB] {
+        &self.cached_wall
     }
 
-    //? Collect solid platform AABBs (everything except OneWay).
-    pub fn solid_aabbs(&self) -> Vec<AABB> {
-        self.platforms
-            .iter()
-            .filter(|p| p.platform_type != PlatformType::OneWay)
-            .map(|p| p.aabb)
-            .collect()
+    pub fn solid_aabbs(&self) -> &[AABB] {
+        &self.cached_solid
     }
 
-    //? Collect one-way platform AABBs.
-    pub fn one_way_aabbs(&self) -> Vec<AABB> {
-        self.platforms
-            .iter()
-            .filter(|p| p.platform_type == PlatformType::OneWay)
-            .map(|p| p.aabb)
-            .collect()
+    pub fn one_way_aabbs(&self) -> &[AABB] {
+        &self.cached_one_way
+    }
+
+    pub fn all_aabbs(&self) -> &[AABB] {
+        &self.cached_all
     }
 
     pub fn camera_y_bounds(&self, screen_height: f32) -> (f32, f32) {

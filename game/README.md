@@ -1,4 +1,7 @@
-# Journey Engine: WASM Compilation
+# Journey Engine: WASM Distribution README (@ujjwalvivek/journey-engine)
+
+[![NPM Version](https://img.shields.io/npm/v/@ujjwalvivek/journey-engine?style=for-the-badge&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@ujjwalvivek/journey-engine)
+[![License](https://img.shields.io/npm/l/@ujjwalvivek/journey-engine?style=for-the-badge&color=cb3837&logo=github)](https://www.npmjs.com/package/@ujjwalvivek/journey-engine)
 
 WebAssembly build of **Journey**, a custom 2D Metroidvania game engine built from scratch in Rust. By hosting the compiled `.wasm` binaries on the global CDN, the engine's Git repository remains 100% clean of binary bloat while allowing frontend wrappers to time-travel between engine versions dynamically.
 
@@ -34,3 +37,7 @@ async function journeyEngine() {
 
 journeyEngine();
 ```
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.

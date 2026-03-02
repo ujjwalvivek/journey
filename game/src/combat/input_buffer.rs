@@ -64,7 +64,12 @@ impl CombatInputBuffer {
             .iter()
             .position(|b| fsm::can_transition(state, b.action, move_db))
         {
-            Some(self.queue.remove(idx).unwrap().action)
+            Some(
+                self.queue
+                    .remove(idx)
+                    .expect("index from position()")
+                    .action,
+            )
         } else {
             None
         }
@@ -76,6 +81,14 @@ impl CombatInputBuffer {
 
     pub fn clear(&mut self) {
         self.queue.clear();
+    }
+
+    //? Rescale the buffer window to match a new tick rate so the wall-clock expiry
+    //? window stays constant (DEFAULT_BUFFER_WINDOW ticks at 60Hz ≈ 333ms).
+    pub fn set_tick_rate(&mut self, tick_rate: u32) {
+        const BASE: u32 = 60;
+        self.buffer_window =
+            ((DEFAULT_BUFFER_WINDOW as u32 * tick_rate + BASE / 2) / BASE).max(1) as u16;
     }
 
     //? Peek at the oldest buffered action without consuming it.

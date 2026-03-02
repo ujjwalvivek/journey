@@ -1,0 +1,2 @@
+/api     https://docs.rs/journey-engine     301
+/api/*   https://docs.rs/journey-engine     301

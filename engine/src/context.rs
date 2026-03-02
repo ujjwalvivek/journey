@@ -1,8 +1,8 @@
 /**----------------------------------------------------
 *!  Game context providing access to engine systems.
 *----------------------------------------------------**/
-use crate::audio::{AudioEvent, AudioManager};
-use crate::input::InputState;
+use crate::audio::{AudioManager, UiAudioEvent};
+use crate::input::{GameAction, InputState};
 use crate::sprite::{BlendMode, Rect, Sprite};
 use glam::Vec2;
 
@@ -13,8 +13,8 @@ use glam::Vec2;
 //? - Screen dimensions
 //? Interpolation alpha for render-time smoothing between physics frames.
 //? - Sprite batch (current frame, internal use, cleared each frame)
-pub struct Context {
-    pub input: InputState,
+pub struct Context<A: GameAction> {
+    pub input: InputState<A>,
     pub delta_time: f32,
     pub screen_width: f32,
     pub screen_height: f32,
@@ -33,7 +33,7 @@ pub struct Context {
     pub hdr_enabled: bool,
     pub request_hdr: Option<bool>,
     pub audio: AudioManager,
-    pub pending_audio: Vec<AudioEvent>,
+    pub pending_ui_audio: Vec<UiAudioEvent>,
 
     //* pub(crate) - public only within the current crate
     //* Vec<T> - growable, heap-allocated array
@@ -47,7 +47,7 @@ pub(crate) struct PendingTexture {
     pub label: String,
 }
 
-impl Context {
+impl<A: GameAction> Context<A> {
     //? Create a new context with given screen dimensions
     //? and default values for other fields.
     pub fn new(screen_width: f32, screen_height: f32) -> Self {
@@ -73,7 +73,7 @@ impl Context {
             hdr_enabled: false,
             request_hdr: None,
             audio: AudioManager::new(),
-            pending_audio: Vec::new(),
+            pending_ui_audio: Vec::new(),
         }
     }
 
@@ -164,23 +164,13 @@ impl Context {
         Vec2::new(self.screen_width / 2.0, self.screen_height / 2.0)
     }
 
-    //? Queue a one-shot audio event. Safe to call from `fixed_update` or `update`.
-    //? Duplicates within the same frame are automatically deduplicated on drain.
-    pub fn push_audio(&mut self, event: AudioEvent) {
-        self.pending_audio.push(event);
-    }
-
-    pub(crate) fn drain_audio_events(&mut self) {
-        if self.pending_audio.is_empty() {
+    //? Deduplicate UI audio events queued during this frame.
+    pub(crate) fn drain_ui_audio_events(&mut self) {
+        if self.pending_ui_audio.is_empty() {
             return;
         }
-        //? Deduplicate: only fire each unique event once per frame
-        self.pending_audio.sort_unstable();
-        self.pending_audio.dedup();
-        //* Events are dispatched by the game's audio handler via drain
-        //* The game reads pending_audio after this sort+dedup
-        //* Actually, we just leave them sorted+deduped for the game to consume
-        //* since the game owns the StaticSoundData mapping.
+        self.pending_ui_audio.sort_unstable();
+        self.pending_ui_audio.dedup();
     }
 
     //? Clear sprite batch (called internally between frames).

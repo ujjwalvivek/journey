@@ -7,8 +7,8 @@
 *?  - The `AudioManager` wraps `Option<kira::AudioManager>` for lazy/graceful init.
 *?  - Four sub-tracks: Music, Ambience, SFX, UI each with independent volume.
 *?  - Music/Ambience use handle tracking to prevent overlapping loops.
-*?  - One-shot SFX are fire-and-forget via `AudioEvent` queue drained per frame.
-*?  - And, `AudioResponse` extension trait auto-wires egui widgets to UI sounds.
+*?  - `UiAudioEvent` covers engine-level UI interactions (hover, click, checkbox).
+*?  - `AudioResponse` extension trait auto-wires egui widgets to UI sounds.
 *------------------------------------------------------------------------------------------**/
 use kira::AudioManager as KiraManager;
 use kira::AudioManagerSettings;
@@ -28,32 +28,14 @@ pub enum AudioTrack {
     Ui,
 }
 
-//? One-shot audio event queued during `fixed_update` and drained once per frame.
-//? Game code pushes these into `Context::pending_audio`; the engine drains them.
+//? Engine-level UI audio events for egui widget interactions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum AudioEvent {
-    Jump,
-    Land,
-    Dash,
-    Run,
-    WallGrab,
-    WallSlide,
-    Swing,
-    Hit,
-    Parry,
-    Stagger,
-    Death,
-    Respawn,
-    GrappleStatic,
-    GrappleEnemy,
-    Projectile,
-    ProjectileBounce,
-    RunStop,
-    UiHover,
-    UiClick,
-    UiTabChange,
-    UiCheckboxOn,
-    UiCheckboxOff,
+pub enum UiAudioEvent {
+    Hover,
+    Click,
+    CheckboxOn,
+    CheckboxOff,
+    TabChange,
 }
 
 struct Tracks {
@@ -406,42 +388,42 @@ pub fn load_sound_data(bytes: &'static [u8]) -> Option<StaticSoundData> {
 }
 
 //? Extension trait for `egui::Response` that queues UI audio events automatically.
-//* `if ui.button("Play").with_ui_sound(&mut ctx.pending_audio).clicked() { ... }`
+//* `if ui.button("Play").with_ui_sound(&mut ctx.pending_ui_audio).clicked() { ... }`
 pub trait AudioResponse {
-    fn with_ui_sound(self, pending: &mut Vec<AudioEvent>) -> Self;
-    fn with_checkbox_sound(self, checked: bool, pending: &mut Vec<AudioEvent>) -> Self;
-    fn with_tab_sound(self, pending: &mut Vec<AudioEvent>) -> Self;
+    fn with_ui_sound(self, pending: &mut Vec<UiAudioEvent>) -> Self;
+    fn with_checkbox_sound(self, checked: bool, pending: &mut Vec<UiAudioEvent>) -> Self;
+    fn with_tab_sound(self, pending: &mut Vec<UiAudioEvent>) -> Self;
 }
 
 impl AudioResponse for egui::Response {
-    fn with_ui_sound(self, pending: &mut Vec<AudioEvent>) -> Self {
+    fn with_ui_sound(self, pending: &mut Vec<UiAudioEvent>) -> Self {
         let id = self.id;
         let was_hovered = self.ctx.data(|d| d.get_temp::<bool>(id).unwrap_or(false));
         let now_hovered = self.hovered();
         self.ctx.data_mut(|d| d.insert_temp(id, now_hovered));
         if now_hovered && !was_hovered {
-            pending.push(AudioEvent::UiHover);
+            pending.push(UiAudioEvent::Hover);
         }
         if self.clicked() {
-            pending.push(AudioEvent::UiClick);
+            pending.push(UiAudioEvent::Click);
         }
         self
     }
 
-    fn with_checkbox_sound(self, checked: bool, pending: &mut Vec<AudioEvent>) -> Self {
+    fn with_checkbox_sound(self, checked: bool, pending: &mut Vec<UiAudioEvent>) -> Self {
         if self.changed() {
             pending.push(if checked {
-                AudioEvent::UiCheckboxOn
+                UiAudioEvent::CheckboxOn
             } else {
-                AudioEvent::UiCheckboxOff
+                UiAudioEvent::CheckboxOff
             });
         }
         self
     }
 
-    fn with_tab_sound(self, pending: &mut Vec<AudioEvent>) -> Self {
+    fn with_tab_sound(self, pending: &mut Vec<UiAudioEvent>) -> Self {
         if self.clicked() {
-            pending.push(AudioEvent::UiTabChange);
+            pending.push(UiAudioEvent::TabChange);
         }
         self
     }

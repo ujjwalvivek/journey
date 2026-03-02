@@ -8,15 +8,19 @@ pub mod combat;
 pub mod config;
 pub mod enemy;
 pub mod entity;
+pub mod input;
 pub mod level;
 pub mod level_editor;
 pub mod player;
 pub mod projectile;
 use assets::PlayerAnimations;
-use audio::AudioAssets;
+use audio::{AudioAssets, AudioEvent};
+use combat::moves::MoveDatabase;
 use config::PhysicsConfig;
 use enemy::Enemy;
-use engine::{AudioEvent, Context, FixedTime, GameApp};
+use engine::egui;
+use engine::{Context, FixedTime, GameApp};
+use input::JourneyAction;
 use level::Level;
 use level_editor::LevelEditor;
 use player::Player;
@@ -39,7 +43,7 @@ pub enum MenuReturnState {
     InGame,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum OptionsTab {
     #[default]
     Graphics,
@@ -78,8 +82,11 @@ pub struct JourneyGame {
     pub(crate) level: Level,
     camera_x: f32,
     camera_y: f32,
+    prev_camera_x: f32,
+    prev_camera_y: f32,
     scene: GameScene,
     pub(crate) physics_config: PhysicsConfig,
+    enemy_move_db: MoveDatabase,
     initial_screen_height: f32,
     screen_initialized: bool,
     init_frame_count: u32,
@@ -96,6 +103,7 @@ pub struct JourneyGame {
     audio_assets: AudioAssets,
     audio_music_state: AudioMusicState,
     audio_options_ducked: bool,
+    pending_game_audio: Vec<AudioEvent>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,7 +115,7 @@ enum AudioMusicState {
 }
 
 impl JourneyGame {
-    fn open_level_editor(&mut self, return_state: MenuReturnState, ctx: &Context) {
+    fn open_level_editor(&mut self, return_state: MenuReturnState, ctx: &Context<JourneyAction>) {
         self.state = GameState::LevelEditor { return_state };
         let start_pos = self.player.position();
         let level_floor_y = self.level.death_y_threshold - 100.0;
@@ -139,6 +147,8 @@ impl JourneyGame {
             self.level.player_spawn.y - self.initial_screen_height / 2.0,
             self.initial_screen_height,
         );
+        self.prev_camera_x = self.camera_x;
+        self.prev_camera_y = self.camera_y;
         let all_platform_aabbs: Vec<_> = self.level.platforms.iter().map(|p| p.aabb).collect();
         let mut enemies: Vec<Enemy> = self
             .level
@@ -152,7 +162,7 @@ impl JourneyGame {
         self.enemies = enemies;
     }
 
-    fn update_music_state(&mut self, ctx: &mut Context) {
+    fn update_music_state(&mut self, ctx: &mut Context<JourneyAction>) {
         let desired = match self.state {
             GameState::Splash { .. } => AudioMusicState::None,
             GameState::StartMenu { .. }
@@ -167,6 +177,8 @@ impl JourneyGame {
         };
 
         if desired != self.audio_music_state {
+            ctx.audio.stop_loop_sfx(0.1);
+
             match desired {
                 AudioMusicState::None => {
                     ctx.audio.stop_music(1.0);
@@ -247,15 +259,38 @@ impl JourneyGame {
         }
     }
 
-    fn dispatch_pending_audio(&mut self, ctx: &mut Context) {
-        for event in ctx.pending_audio.drain(..) {
+    fn dispatch_pending_audio(&mut self, ctx: &mut Context<JourneyAction>) {
+        //? Dedup and dispatch game-specific audio events
+        self.pending_game_audio.sort_unstable();
+        self.pending_game_audio.dedup();
+        for event in self.pending_game_audio.drain(..) {
             self.audio_assets.dispatch(event, &mut ctx.audio);
+        }
+
+        //? Dispatch engine UI audio events (hover, click, checkbox, etc.)
+        for ui_event in ctx.pending_ui_audio.drain(..) {
+            self.audio_assets.dispatch_ui(ui_event, &mut ctx.audio);
         }
     }
 }
 
 impl GameApp for JourneyGame {
-    fn init(ctx: &mut Context) -> Self {
+    type Action = JourneyAction;
+
+    fn window_title() -> &'static str {
+        "Journey"
+    }
+
+    fn window_icon() -> Option<&'static [u8]> {
+        Some(include_bytes!("../../web/public/favicon.png"))
+    }
+
+    fn wasm_ready_event() -> Option<&'static str> {
+        Some("journey:first-frame")
+    }
+
+    fn init(ctx: &mut Context<JourneyAction>) -> Self {
+        input::setup_default_bindings(&mut ctx.input);
         let _tex_player = ctx.load_texture(
             include_bytes!("../assets/player/player.png"),
             "Player Spritesheet",
@@ -301,11 +336,14 @@ impl GameApp for JourneyGame {
             level,
             camera_x: init_camera_x,
             camera_y: init_camera_y,
+            prev_camera_x: init_camera_x,
+            prev_camera_y: init_camera_y,
             scene: GameScene {
                 show_collision_box: false,
                 ..Default::default()
             },
             physics_config: PhysicsConfig::default(),
+            enemy_move_db: MoveDatabase::default(),
             initial_screen_height: ctx.screen_height,
             screen_initialized: false,
             init_frame_count: 0,
@@ -324,10 +362,11 @@ impl GameApp for JourneyGame {
             audio_assets: AudioAssets::load(),
             audio_music_state: AudioMusicState::None,
             audio_options_ducked: false,
+            pending_game_audio: Vec::new(),
         }
     }
 
-    fn fixed_update(&mut self, ctx: &mut Context, fixed_time: &FixedTime) {
+    fn fixed_update(&mut self, ctx: &mut Context<JourneyAction>, fixed_time: &FixedTime) {
         //? State Machine Handling
         match self.state {
             GameState::Splash { .. }
@@ -346,7 +385,7 @@ impl GameApp for JourneyGame {
         let solid_aabbs = self.level.solid_aabbs();
         let one_way_aabbs = self.level.one_way_aabbs();
         let wall_aabbs = self.level.wall_aabbs();
-        let all_aabbs: Vec<_> = self.level.platforms.iter().map(|p| p.aabb).collect();
+        let all_aabbs = self.level.all_aabbs();
 
         //? Update grapple target: nearest node OR staggered enemy.
         //? Staggered enemies ALWAYS take priority over static nodes (∞ range).
@@ -379,16 +418,17 @@ impl GameApp for JourneyGame {
         self.player.fixed_update(
             ctx.delta_time,
             fixed_time.tick,
-            &solid_aabbs,
-            &one_way_aabbs,
-            &wall_aabbs,
+            fixed_time.tick_rate(),
+            solid_aabbs,
+            one_way_aabbs,
+            wall_aabbs,
             &self.physics_config,
         );
 
         //? An enter_death() here starts the normal death -> respawn timer pipeline.
         if !self.player.is_dead && self.player.position().y > self.level.death_y_threshold {
             self.player.enter_death();
-            self.death_respawn_timer = 60;
+            self.death_respawn_timer = config::scale_ticks(60, fixed_time.tick_rate()) as u32;
         }
 
         //? Respawn player and reset all enemies + projectiles
@@ -410,6 +450,10 @@ impl GameApp for JourneyGame {
                 }
                 self.projectiles = ProjectilePool::new();
             }
+
+            //? Collapse prev/cur gap so interpolation_alpha can't jitter the camera while dead.
+            self.prev_camera_x = self.camera_x;
+            self.prev_camera_y = self.camera_y;
             return;
         }
 
@@ -432,6 +476,7 @@ impl GameApp for JourneyGame {
 
             if let Some(idx) = enemy_idx {
                 if attack_buffered {
+                    self.player.input_buffer.clear();
                     //? EXECUTE: attack anim → enemy dies → neon burst → Fall
                     let kill_pos = self.enemies[idx].entity.position;
                     let accent = self.enemies[idx].config.accent_color;
@@ -443,14 +488,18 @@ impl GameApp for JourneyGame {
                     self.player.entity.velocity = self.player.grapple_launch_dir * 80.0;
                     self.player.state = crate::player::PlayerState::Fall;
                     self.player.anim_state.play("Fall");
-                    self.player.enter_hitstop(config::HITSTOP_KILL_TICKS);
+                    self.player.enter_hitstop(config::scale_ticks(
+                        config::HITSTOP_KILL_TICKS,
+                        fixed_time.tick_rate(),
+                    ));
                     ctx.trigger_freeze(8);
                     ctx.trigger_shake(6.0, 0.2);
                     //? Larger neon burst for grapple execute
+                    let burst_ticks = config::scale_ticks(18, fixed_time.tick_rate());
                     self.vfx_bursts.push(VfxBurst {
                         position: kill_pos,
-                        timer: 18,
-                        max_timer: 18,
+                        timer: burst_ticks,
+                        max_timer: burst_ticks,
                         color: accent,
                     });
                 } else {
@@ -501,14 +550,22 @@ impl GameApp for JourneyGame {
 
             if let Some(shoot) = enemy.fixed_update(
                 ctx.delta_time,
-                fixed_time.tick,
                 self.player.position(),
-                &all_aabbs,
-                &wall_aabbs,
+                all_aabbs,
+                wall_aabbs,
+                self.physics_config.gravity,
+                self.physics_config.max_fall_speed,
+                &self.enemy_move_db,
+                fixed_time.tick_rate(),
             ) {
-                self.projectiles
-                    .spawn(shoot.origin, shoot.target, idx, shoot.speed, shoot.color);
-                ctx.push_audio(AudioEvent::Projectile);
+                self.projectiles.spawn(
+                    shoot.origin,
+                    shoot.target,
+                    enemy.handle(idx),
+                    shoot.speed,
+                    shoot.color,
+                );
+                self.pending_game_audio.push(AudioEvent::Projectile);
             }
         }
 
@@ -530,8 +587,11 @@ impl GameApp for JourneyGame {
                 entity::apply_knockback(&mut self.player.entity, event.recoil, recoil_dir);
                 ctx.trigger_freeze(event.freeze_frames);
                 ctx.trigger_shake(event.shake_intensity, 0.15);
-                self.player.enter_hitstop(config::HITSTOP_KILL_TICKS);
-                ctx.push_audio(AudioEvent::Hit);
+                self.player.enter_hitstop(config::scale_ticks(
+                    config::HITSTOP_KILL_TICKS,
+                    fixed_time.tick_rate(),
+                ));
+                self.pending_game_audio.push(AudioEvent::Hit);
                 break;
             }
         }
@@ -543,11 +603,12 @@ impl GameApp for JourneyGame {
                     continue;
                 }
                 if let Some(event) =
-                    entity::check_hit(&enemy.entity, &self.player.entity, &enemy.move_db)
+                    entity::check_hit(&enemy.entity, &self.player.entity, &self.enemy_move_db)
                 {
                     enemy.entity.hit_landed = true;
                     self.player.enter_death();
-                    self.death_respawn_timer = 60;
+                    self.death_respawn_timer =
+                        config::scale_ticks(60, fixed_time.tick_rate()) as u32;
                     let dir = if enemy.entity.facing_right { 1.0 } else { -1.0 };
                     entity::apply_knockback(&mut self.player.entity, event.knockback, dir);
                     entity::apply_knockback(&mut enemy.entity, event.recoil, dir);
@@ -559,25 +620,25 @@ impl GameApp for JourneyGame {
         }
 
         self.projectiles.update_all(ctx.delta_time);
-        let bounce_count = self.projectiles.collide_walls(&solid_aabbs);
+        let bounce_count = self.projectiles.collide_walls(solid_aabbs, ctx.delta_time);
         for _ in 0..bounce_count {
-            ctx.push_audio(AudioEvent::ProjectileBounce);
+            self.pending_game_audio.push(AudioEvent::ProjectileBounce);
         }
-        if let Some(source_idx) = self.projectiles.check_parry_deflect(&self.player.entity) {
-            if let Some(enemy) = self.enemies.get_mut(source_idx) {
+        if let Some(source_handle) = self.projectiles.check_parry_deflect(&self.player.entity) {
+            if let Some(enemy) = source_handle.resolve_mut(&mut self.enemies) {
                 enemy.enter_stagger();
             }
             ctx.trigger_freeze(5);
             ctx.trigger_shake(3.0, 0.1);
-            ctx.push_audio(AudioEvent::Parry);
-            ctx.push_audio(AudioEvent::Stagger);
+            self.pending_game_audio.push(AudioEvent::Parry);
+            self.pending_game_audio.push(AudioEvent::Stagger);
         }
 
         if self.projectiles.check_player_hit(&self.player.entity)
             && !self.player.entity.combat.invincible
         {
             self.player.enter_death();
-            self.death_respawn_timer = 60;
+            self.death_respawn_timer = config::scale_ticks(60, fixed_time.tick_rate()) as u32;
         }
 
         //? Tick down VFX burst timers and remove expired ones
@@ -588,11 +649,37 @@ impl GameApp for JourneyGame {
 
         //? Single drain point: collect all player-produced audio events at end of tick.
         for ev in self.player.pending_audio.drain(..) {
-            ctx.push_audio(ev);
+            self.pending_game_audio.push(ev);
         }
+
+        //? Deterministic camera follow (runs at fixed tick rate)
+        self.prev_camera_x = self.camera_x;
+        self.prev_camera_y = self.camera_y;
+
+        let player_pos = self.player.position();
+        let target_camera_x = player_pos.x - ctx.screen_width / 2.0;
+        let blend = 0.1;
+        self.camera_x += (target_camera_x - self.camera_x) * blend;
+
+        let top_trigger = self.camera_y + ctx.screen_height * 0.30;
+        let bottom_trigger = self.camera_y + ctx.screen_height * 0.70;
+        if player_pos.y < top_trigger {
+            let target_y = player_pos.y - ctx.screen_height * 0.30;
+            self.camera_y += (target_y - self.camera_y) * blend;
+        } else if player_pos.y > bottom_trigger {
+            let target_y = player_pos.y - ctx.screen_height * 0.70;
+            self.camera_y += (target_y - self.camera_y) * blend;
+        }
+
+        if (target_camera_x - self.camera_x).abs() < 0.5 {
+            self.camera_x = target_camera_x;
+        }
+
+        self.camera_x = self.camera_x.max(0.0);
+        self.camera_y = self.level.clamp_camera_y(self.camera_y, ctx.screen_height);
     }
 
-    fn update(&mut self, ctx: &mut Context) {
+    fn update(&mut self, ctx: &mut Context<JourneyAction>) {
         self.update_music_state(ctx); //* Manage music/ambience transitions based on game state
         self.dispatch_pending_audio(ctx); //* Dispatch any pending SFX events from this frame
 
@@ -681,6 +768,13 @@ impl GameApp for JourneyGame {
         self.cached_frame_time_ms = ctx.frame_time_ms;
         ctx.fixed_tick_rate = self.pending_tick_rate;
         self.player.move_db.set_tick_rate(self.pending_tick_rate);
+        self.enemy_move_db.set_tick_rate(self.pending_tick_rate);
+        self.player
+            .input_buffer
+            .set_tick_rate(self.pending_tick_rate);
+        for enemy in &mut self.enemies {
+            enemy.set_tick_rate(self.pending_tick_rate);
+        }
         ctx.target_fps = self.pending_target_fps;
 
         //? On WASM, canvas dimensions may be incorrect during initialization.
@@ -701,6 +795,8 @@ impl GameApp for JourneyGame {
                 self.camera_y = self
                     .level
                     .clamp_camera_y(correct_spawn.y - ctx.screen_height / 2.0, ctx.screen_height);
+                self.prev_camera_x = self.camera_x;
+                self.prev_camera_y = self.camera_y;
                 self.initial_screen_height = ctx.screen_height;
                 self.screen_initialized = true;
             } else if self.init_frame_count > 10 {
@@ -717,12 +813,25 @@ impl GameApp for JourneyGame {
             return;
         }
 
-        //? Update level (handles screen resize)
-        self.level.update(
+        //? Update level (handles screen resize) and shift entities by the same delta
+        let dy = self.level.update(
             self.player.position().x,
             ctx.screen_width,
             ctx.screen_height,
         );
+        if dy.abs() > 0.001 {
+            self.player.entity.position.y += dy;
+            self.player.shift_prev_position_y(dy);
+            for enemy in &mut self.enemies {
+                enemy.entity.position.y += dy;
+                enemy.spawn_position.y += dy;
+                if let Some(ref mut plat) = enemy.spawn_platform {
+                    plat.center.y += dy;
+                }
+            }
+            self.camera_y += dy;
+            self.prev_camera_y += dy;
+        }
 
         //? Update player (input gathering, visual state, animation, no physics)
         self.player.update(ctx);
@@ -733,41 +842,18 @@ impl GameApp for JourneyGame {
 
         self.player.clamp_to_bounds(0.0, f32::INFINITY);
 
-        //? Smooth camera follow with frame-rate independent exponential smoothing
+        //? Interpolate camera between fixed ticks for smooth rendering
         let alpha = ctx.interpolation_alpha;
-        let interp_pos = self.player.interpolated_position(alpha);
-        let target_camera_x = interp_pos.x - ctx.screen_width / 2.0;
-        let blend = 1.0 - (1.0 - 0.1_f32).powf(ctx.delta_time * 60.0);
-        self.camera_x += (target_camera_x - self.camera_x) * blend;
-
-        let top_trigger = self.camera_y + ctx.screen_height * 0.30;
-        let bottom_trigger = self.camera_y + ctx.screen_height * 0.70;
-        let player_y = interp_pos.y;
-        if player_y < top_trigger {
-            //? Player is high up, pan camera upward to keep them in the top third.
-            let target_camera_y = player_y - ctx.screen_height * 0.30;
-            self.camera_y += (target_camera_y - self.camera_y) * blend;
-        } else if player_y > bottom_trigger {
-            //? Player is falling low, pan camera downward.
-            let target_camera_y = player_y - ctx.screen_height * 0.70;
-            self.camera_y += (target_camera_y - self.camera_y) * blend;
-        }
-
-        //? Snap camera to target when close enough to prevent lerp micro-stutter
-        if (target_camera_x - self.camera_x).abs() < 0.5 {
-            self.camera_x = target_camera_x;
-        }
-
-        self.camera_x = self.camera_x.max(0.0);
-        self.camera_y = self.level.clamp_camera_y(self.camera_y, ctx.screen_height);
+        let cam_x = self.prev_camera_x + (self.camera_x - self.prev_camera_x) * alpha;
+        let cam_y = self.prev_camera_y + (self.camera_y - self.prev_camera_y) * alpha;
 
         //? Pixel-snap camera offsets to prevent sub-pixel jitter in the renderer
-        ctx.camera_offset_x = self.camera_x.round();
-        ctx.camera_offset_y = self.camera_y.round();
+        ctx.camera_offset_x = cam_x.round();
+        ctx.camera_offset_y = cam_y.round();
     }
 
     //? Render the level and player
-    fn render(&mut self, ctx: &mut Context) {
+    fn render(&mut self, ctx: &mut Context<JourneyAction>) {
         if matches!(
             self.state,
             GameState::Splash { .. } | GameState::StartMenu { .. }
@@ -999,7 +1085,7 @@ impl GameApp for JourneyGame {
     fn ui(
         &mut self,
         ctx: &egui::Context,
-        engine_ctx: &mut Context,
+        engine_ctx: &mut Context<JourneyAction>,
         params: &mut engine::SceneParams,
     ) {
         match self.state {
@@ -1013,7 +1099,7 @@ impl GameApp for JourneyGame {
                 return_state,
                 ref tab,
             } => {
-                let current_tab = tab.clone();
+                let current_tab = *tab;
                 self.show_options_menu(ctx, engine_ctx, params, return_state, current_tab);
             }
             GameState::Paused => {
@@ -1026,7 +1112,7 @@ impl GameApp for JourneyGame {
                     &mut self.level,
                     self.initial_screen_height,
                     self.initial_screen_height,
-                    &mut engine_ctx.pending_audio,
+                    &mut engine_ctx.pending_ui_audio,
                 );
             }
             GameState::InGame => {
@@ -1056,7 +1142,7 @@ impl GameApp for JourneyGame {
                     physics_config: &mut self.physics_config,
                     using_gamepad: self.using_gamepad,
                     show_physics_tuner_in_game: self.show_physics_tuner_in_game,
-                    pending_audio: &mut engine_ctx.pending_audio,
+                    pending_audio: &mut engine_ctx.pending_ui_audio,
                 });
             }
         }

@@ -1,4 +1,4 @@
-name: Publish Engine to NPM and Github Packages
+name: Publish Engine (NPM · crates.io · GitHub Packages · Docs)
 
 on:
   push:
@@ -101,6 +101,13 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Upload WASM pkg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-pkg
+          path: game/pkg
+          retention-days: 1
+
   # --------------------------------------------------------
   # JOB 2: Native Desktop Builds (Windows & Linux)
   # --------------------------------------------------------
@@ -155,7 +162,26 @@ jobs:
             ${{ matrix.artifact_name }}.sha256
 
   # --------------------------------------------------------
-  # JOB 3: Cloudflare Pages Deployment
+  # JOB 3: Publish journey-engine to crates.io
+  # --------------------------------------------------------
+  publish-cargo:
+    name: Publish Rust Crate to crates.io
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish to crates.io
+        run: cargo publish -p journey-engine
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+  # --------------------------------------------------------
+  # JOB 4: Cloudflare Pages Deployment
   # --------------------------------------------------------
   deploy:
     runs-on: ubuntu-latest
@@ -165,6 +191,12 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
+
+      - name: Download WASM pkg artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-pkg
+          path: game/pkg
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -180,6 +212,17 @@ jobs:
       - name: Build Project
         working-directory: ./web
         run: npm run build
+
+      - name: Install mdBook
+        run: |
+          MDBOOK_VER=v0.4.40
+          curl -sSL "https://github.com/rust-lang/mdBook/releases/download/${MDBOOK_VER}/mdbook-${MDBOOK_VER}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
+
+      - name: Build Documentation
+        run: |
+          mdbook build docs
+          mkdir -p web/dist/docs
+          cp -r book/. web/dist/docs/
 
       - name: Deploy to Cloudflare
         uses: cloudflare/pages-action@v1

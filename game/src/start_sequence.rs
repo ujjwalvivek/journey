@@ -1,7 +1,9 @@
 /**----------------------------------------------------
-*!  Start sequence for the game
-*----------------------------------------------------**/
+ *!  Start sequence for the game
+ *----------------------------------------------------**/
+use crate::input::JourneyAction;
 use crate::{GameState, JourneyGame, MenuReturnState, OptionsTab};
+use engine::egui;
 use engine::{AudioResponse, AudioTrack, Context};
 
 pub(crate) fn menu_letterbox_rect(ctx: &egui::Context) -> egui::Rect {
@@ -31,7 +33,7 @@ impl JourneyGame {
             40,
             40,
             43,
-            (255.0 * alpha.clamp(0.95, 1.0)) as u8,
+            (255.0 * alpha.clamp(0.0, 1.0)) as u8,
         );
 
         let splash_bg = egui::Color32::from_rgb(223, 249, 251);
@@ -51,6 +53,8 @@ impl JourneyGame {
         egui::Area::new(egui::Id::new("splash_center"))
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
+                let padded_w = (letterbox.width() - 80.0 * ui_scale).max(160.0);
+                ui.set_min_width(padded_w);
                 ui.vertical_centered(|ui| {
                     ui.label(
                         egui::RichText::new("Untitled Game")
@@ -76,7 +80,7 @@ impl JourneyGame {
     pub(crate) fn show_start_menu(
         &mut self,
         ctx: &egui::Context,
-        engine_ctx: &mut Context,
+        engine_ctx: &mut Context<JourneyAction>,
         animation_progress: f32,
     ) {
         let bg_color = egui::Color32::from_rgb(223, 249, 251);
@@ -108,6 +112,7 @@ impl JourneyGame {
                 egui::Area::new(egui::Id::new("start_title"))
                     .anchor(egui::Align2::CENTER_CENTER, [current_title_offset, 0.0])
                     .show(ctx, |ui| {
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                         ui.label(
                             egui::RichText::new("Untitled Game")
                                 .size(48.0 * ui_scale)
@@ -157,7 +162,7 @@ impl JourneyGame {
 
                                 if ui
                                     .add_sized([btn_w, btn_h], menu_btn("Start Game"))
-                                    .with_ui_sound(&mut engine_ctx.pending_audio)
+                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio)
                                     .clicked()
                                 {
                                     self.state = GameState::InGame;
@@ -166,7 +171,7 @@ impl JourneyGame {
 
                                 if ui
                                     .add_sized([btn_w, btn_h], menu_btn("Level Editor"))
-                                    .with_ui_sound(&mut engine_ctx.pending_audio)
+                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio)
                                     .clicked()
                                 {
                                     self.state = GameState::LevelEditor {
@@ -185,7 +190,7 @@ impl JourneyGame {
 
                                 if ui
                                     .add_sized([btn_w, btn_h], menu_btn("Options"))
-                                    .with_ui_sound(&mut engine_ctx.pending_audio)
+                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio)
                                     .clicked()
                                 {
                                     self.state = GameState::Options {
@@ -198,7 +203,7 @@ impl JourneyGame {
                                 #[cfg(not(target_arch = "wasm32"))]
                                 if ui
                                     .add_sized([btn_w, btn_h], menu_btn("Exit Game"))
-                                    .with_ui_sound(&mut engine_ctx.pending_audio)
+                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio)
                                     .clicked()
                                 {
                                     engine_ctx.request_exit = true;
@@ -209,7 +214,11 @@ impl JourneyGame {
             });
     }
 
-    pub(crate) fn show_paused_menu(&mut self, ctx: &egui::Context, engine_ctx: &mut Context) {
+    pub(crate) fn show_paused_menu(
+        &mut self,
+        ctx: &egui::Context,
+        engine_ctx: &mut Context<JourneyAction>,
+    ) {
         let letterbox = menu_letterbox_rect(ctx);
         let bg_color = egui::Color32::from_rgb(223, 249, 251);
         ctx.layer_painter(egui::LayerId::new(
@@ -258,7 +267,7 @@ impl JourneyGame {
 
                         if ui
                             .add_sized([btn_w, btn_h], menu_btn("Continue"))
-                            .with_ui_sound(&mut engine_ctx.pending_audio)
+                            .with_ui_sound(&mut engine_ctx.pending_ui_audio)
                             .clicked()
                         {
                             self.state = GameState::InGame;
@@ -267,7 +276,7 @@ impl JourneyGame {
 
                         if ui
                             .add_sized([btn_w, btn_h], menu_btn("Options"))
-                            .with_ui_sound(&mut engine_ctx.pending_audio)
+                            .with_ui_sound(&mut engine_ctx.pending_ui_audio)
                             .clicked()
                         {
                             self.state = GameState::Options {
@@ -279,7 +288,7 @@ impl JourneyGame {
 
                         if ui
                             .add_sized([btn_w, btn_h], menu_btn("Level Editor"))
-                            .with_ui_sound(&mut engine_ctx.pending_audio)
+                            .with_ui_sound(&mut engine_ctx.pending_ui_audio)
                             .clicked()
                         {
                             let start_pos = self.player.position();
@@ -298,7 +307,7 @@ impl JourneyGame {
 
                         if ui
                             .add_sized([btn_w, btn_h], menu_btn("Main Menu"))
-                            .with_ui_sound(&mut engine_ctx.pending_audio)
+                            .with_ui_sound(&mut engine_ctx.pending_ui_audio)
                             .clicked()
                         {
                             self.state = GameState::StartMenu {
@@ -313,12 +322,12 @@ impl JourneyGame {
     pub(crate) fn show_options_menu(
         &mut self,
         ctx: &egui::Context,
-        engine_ctx: &mut Context,
+        engine_ctx: &mut Context<JourneyAction>,
         params: &mut engine::SceneParams,
         return_state: MenuReturnState,
         current_tab: OptionsTab,
     ) {
-        let mut new_tab = current_tab.clone();
+        let mut new_tab = current_tab;
         let letterbox = menu_letterbox_rect(ctx);
         let menu_bg = egui::Color32::from_rgb(40, 40, 43);
         ctx.layer_painter(egui::LayerId::new(
@@ -361,28 +370,28 @@ impl JourneyGame {
                             OptionsTab::Graphics,
                             egui::RichText::new("Graphics").size(tab_size),
                         )
-                        .with_tab_sound(&mut engine_ctx.pending_audio);
+                        .with_tab_sound(&mut engine_ctx.pending_ui_audio);
                         ui.add_space(tab_spacing);
                         ui.selectable_value(
                             &mut new_tab,
                             OptionsTab::Physics,
                             egui::RichText::new("Gameplay").size(tab_size),
                         )
-                        .with_tab_sound(&mut engine_ctx.pending_audio);
+                        .with_tab_sound(&mut engine_ctx.pending_ui_audio);
                         ui.add_space(tab_spacing);
                         ui.selectable_value(
                             &mut new_tab,
                             OptionsTab::Controls,
                             egui::RichText::new("Controls").size(tab_size),
                         )
-                        .with_tab_sound(&mut engine_ctx.pending_audio);
+                        .with_tab_sound(&mut engine_ctx.pending_ui_audio);
                         ui.add_space(tab_spacing);
                         ui.selectable_value(
                             &mut new_tab,
                             OptionsTab::Audio,
                             egui::RichText::new("Audio").size(tab_size),
                         )
-                        .with_tab_sound(&mut engine_ctx.pending_audio);
+                        .with_tab_sound(&mut engine_ctx.pending_ui_audio);
                     });
                     ui.add_space(4.0 * ui_scale);
                     ui.separator();
@@ -398,7 +407,7 @@ impl JourneyGame {
                                     egui::Button::new(egui::RichText::new("Back").size(label_size))
                                         .corner_radius(2.0),
                                 )
-                                .with_ui_sound(&mut engine_ctx.pending_audio)
+                                .with_ui_sound(&mut engine_ctx.pending_ui_audio)
                                 .clicked()
                             {
                                 self.state = match return_state {
@@ -457,7 +466,7 @@ impl JourneyGame {
                                                                 fullscreen_resp.changed();
                                                             fullscreen_resp.with_checkbox_sound(
                                                                 fullscreen,
-                                                                &mut engine_ctx.pending_audio,
+                                                                &mut engine_ctx.pending_ui_audio,
                                                             );
                                                             if fullscreen_changed {
                                                                 engine_ctx.set_fullscreen_enabled(
@@ -479,7 +488,7 @@ impl JourneyGame {
                                                             let hdr_changed = hdr_resp.changed();
                                                             hdr_resp.with_checkbox_sound(
                                                                 hdr,
-                                                                &mut engine_ctx.pending_audio,
+                                                                &mut engine_ctx.pending_ui_audio,
                                                             );
                                                             if hdr_changed {
                                                                 engine_ctx.set_hdr_enabled(hdr);
@@ -515,7 +524,7 @@ impl JourneyGame {
                                                         );
                                                         r.with_checkbox_sound(
                                                             params.fog_enabled,
-                                                            &mut engine_ctx.pending_audio,
+                                                            &mut engine_ctx.pending_ui_audio,
                                                         );
                                                     }
                                                     if params.fog_enabled {
@@ -580,7 +589,7 @@ impl JourneyGame {
                                                         );
                                                         r.with_checkbox_sound(
                                                             self.show_physics_tuner_in_game,
-                                                            &mut engine_ctx.pending_audio,
+                                                            &mut engine_ctx.pending_ui_audio,
                                                         );
                                                     }
                                                     ui.add_space(section_spacing);

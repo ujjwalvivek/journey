@@ -6,7 +6,7 @@
 *--------------------------------------------------------------------------------**/
 use crate::combat::fsm::CombatPhase;
 use crate::combat::moves::MoveDatabase;
-use crate::combat::{CombatState, Health, Posture};
+use crate::combat::{CombatState, Health};
 use engine::{AABB, BoxVolume, CollisionLayer, Vec2};
 
 //? A game entity with physics, collision, and combat state.
@@ -17,7 +17,6 @@ pub struct Entity {
     pub facing_right: bool,
     pub combat: CombatState,
     pub health: Health,
-    pub posture: Posture,
     pub pushbox_size: Vec2,
     pub hurtbox_size: Vec2,
     pub hitbox_volume: Option<BoxVolume>,
@@ -28,14 +27,13 @@ pub struct Entity {
 }
 
 impl Entity {
-    pub fn new(position: Vec2, pushbox_size: Vec2, health: f32, posture_max: f32) -> Self {
+    pub fn new(position: Vec2, pushbox_size: Vec2, health: f32) -> Self {
         Self {
             position,
             velocity: Vec2::ZERO,
             facing_right: true,
             combat: CombatState::default(),
             health: Health::new(health),
-            posture: Posture::new(posture_max, 10.0),
             pushbox_size,
             hurtbox_size: pushbox_size,
             hitbox_volume: None,
@@ -326,7 +324,7 @@ mod tests {
 
     #[test]
     fn entity_falls_with_gravity() {
-        let mut e = Entity::new(Vec2::new(100.0, 0.0), Vec2::new(30.0, 128.0), 100.0, 100.0);
+        let mut e = Entity::new(Vec2::new(100.0, 0.0), Vec2::new(30.0, 128.0), 100.0);
         let platforms = [];
         let gravity = 110.0 * 32.0; //* matches config
         let max_fall = 40.0 * 32.0;
@@ -342,7 +340,7 @@ mod tests {
 
     #[test]
     fn entity_lands_on_platform() {
-        let mut e = Entity::new(Vec2::new(100.0, 0.0), Vec2::new(30.0, 50.0), 100.0, 100.0);
+        let mut e = Entity::new(Vec2::new(100.0, 0.0), Vec2::new(30.0, 50.0), 100.0);
         let platform = AABB::new(Vec2::new(100.0, 100.0), Vec2::new(200.0, 20.0));
         let gravity = 3520.0;
         let max_fall = 1280.0;
@@ -365,7 +363,7 @@ mod tests {
         let total_ticks = 180; //* 3 seconds at 60Hz
 
         //? Simulate at "60fps" - 1 fixed step per visual frame
-        let mut e60 = Entity::new(Vec2::new(200.0, 0.0), Vec2::new(30.0, 50.0), 100.0, 100.0);
+        let mut e60 = Entity::new(Vec2::new(200.0, 0.0), Vec2::new(30.0, 50.0), 100.0);
         let mut positions_60: Vec<Vec2> = Vec::new();
         for _ in 0..total_ticks {
             fixed_update_physics(&mut e60, &[platform], fixed_dt, gravity, max_fall);
@@ -373,7 +371,7 @@ mod tests {
         }
 
         //? Simulate at "30fps" - 2 fixed steps per visual frame
-        let mut e30 = Entity::new(Vec2::new(200.0, 0.0), Vec2::new(30.0, 50.0), 100.0, 100.0);
+        let mut e30 = Entity::new(Vec2::new(200.0, 0.0), Vec2::new(30.0, 50.0), 100.0);
         let mut positions_30: Vec<Vec2> = Vec::new();
         for _ in 0..(total_ticks / 2) {
             //? Two fixed steps per "visual frame"
@@ -396,7 +394,7 @@ mod tests {
     fn hitbox_spawns_and_despawns_with_phase() {
         use crate::combat::fsm;
         let db = MoveDatabase::default();
-        let mut e = Entity::new(Vec2::new(100.0, 100.0), Vec2::new(30.0, 50.0), 100.0, 100.0);
+        let mut e = Entity::new(Vec2::new(100.0, 100.0), Vec2::new(30.0, 50.0), 100.0);
 
         fsm::begin_move(&mut e.combat, crate::combat::MoveId::AttackHorizontal, &db);
 
@@ -436,9 +434,9 @@ mod tests {
         let db = MoveDatabase::default();
 
         //? Attacker at x=100, facing right
-        let mut attacker = Entity::new(Vec2::new(100.0, 100.0), Vec2::new(8.0, 32.0), 100.0, 100.0);
+        let mut attacker = Entity::new(Vec2::new(100.0, 100.0), Vec2::new(8.0, 32.0), 100.0);
         //? Defender at x=115 (within hitbox reach at internal resolution)
-        let defender = Entity::new(Vec2::new(115.0, 100.0), Vec2::new(9.0, 32.0), 100.0, 100.0);
+        let defender = Entity::new(Vec2::new(115.0, 100.0), Vec2::new(9.0, 32.0), 100.0);
 
         //? No hit when idle
         assert!(check_hit(&attacker, &defender, &db).is_none());
@@ -465,9 +463,9 @@ mod tests {
         use crate::combat::fsm;
         let db = MoveDatabase::default();
 
-        let mut attacker = Entity::new(Vec2::new(100.0, 100.0), Vec2::new(8.0, 32.0), 100.0, 100.0);
+        let mut attacker = Entity::new(Vec2::new(100.0, 100.0), Vec2::new(8.0, 32.0), 100.0);
         //? Defender far away
-        let defender = Entity::new(Vec2::new(200.0, 100.0), Vec2::new(8.0, 32.0), 100.0, 100.0);
+        let defender = Entity::new(Vec2::new(200.0, 100.0), Vec2::new(8.0, 32.0), 100.0);
 
         fsm::begin_move(
             &mut attacker.combat,
@@ -484,20 +482,20 @@ mod tests {
 
     #[test]
     fn knockback_applies_directional_impulse() {
-        let mut e = Entity::new(Vec2::ZERO, Vec2::new(30.0, 50.0), 100.0, 100.0);
+        let mut e = Entity::new(Vec2::ZERO, Vec2::new(30.0, 50.0), 100.0);
         apply_knockback(&mut e, Vec2::new(200.0, -50.0), 1.0);
         assert_eq!(e.velocity.x, 200.0);
         assert_eq!(e.velocity.y, -50.0);
 
         //? Opposite direction
-        let mut e2 = Entity::new(Vec2::ZERO, Vec2::new(30.0, 50.0), 100.0, 100.0);
+        let mut e2 = Entity::new(Vec2::ZERO, Vec2::new(30.0, 50.0), 100.0);
         apply_knockback(&mut e2, Vec2::new(200.0, 0.0), -1.0);
         assert_eq!(e2.velocity.x, -200.0);
     }
 
     #[test]
     fn hitstun_friction_decelerates() {
-        let mut e = Entity::new(Vec2::ZERO, Vec2::new(30.0, 50.0), 100.0, 100.0);
+        let mut e = Entity::new(Vec2::ZERO, Vec2::new(30.0, 50.0), 100.0);
         e.is_grounded = true;
         e.velocity.x = 300.0;
         let dt = 1.0 / 60.0;

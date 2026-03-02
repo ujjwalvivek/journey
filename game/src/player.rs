@@ -9,12 +9,14 @@
 *--------------------------------------------------------------------------------**/
 use crate::anim::AnimationState;
 use crate::assets::{FRAME_HEIGHT, FRAME_WIDTH};
+use crate::audio::AudioEvent;
 use crate::combat::fsm::{self, CombatPhase};
 use crate::combat::input_buffer::CombatInputBuffer;
 use crate::combat::moves::{MoveDatabase, MoveId};
-use crate::config::*;
+use crate::config::{self, *};
 use crate::entity::{self, Entity};
-use engine::{AABB, AudioEvent, Context, GameAction, Vec2, math::move_towards};
+use crate::input::JourneyAction;
+use engine::{AABB, Context, Vec2, math::move_towards};
 
 //? The primary driver of movement behavior and animation.
 //? Combat timing is still handled by the CombatState FSM inside entity.combat.
@@ -65,7 +67,7 @@ pub struct Player {
 
     //? Stats and tunable parameters
     was_grounded: bool,
-    stats: PlayerStats,
+    stats: PhysicsConfig,
     frame_input: FrameInput,
     combat_snapshot: CombatInputSnapshot,
     pub current_tick: u64,
@@ -115,6 +117,8 @@ pub struct Player {
 
     pub is_dead: bool,
 
+    tick_rate: u32,
+
     //? Audio events produced this tick, drained by lib.rs after fixed_update.
     pub pending_audio: Vec<AudioEvent>,
 }
@@ -122,18 +126,13 @@ pub struct Player {
 impl Player {
     pub fn new(start_pos: Vec2, anim_state: AnimationState) -> Self {
         Self {
-            entity: Entity::new(
-                start_pos,
-                Vec2::new(PLAYER_WIDTH, PLAYER_HEIGHT),
-                1.0,
-                100.0,
-            ),
+            entity: Entity::new(start_pos, Vec2::new(PLAYER_WIDTH, PLAYER_HEIGHT), 1.0),
             state: PlayerState::Idle,
             anim_state,
             move_db: MoveDatabase::default(),
             input_buffer: CombatInputBuffer::default(),
             was_grounded: false,
-            stats: PlayerStats::default(),
+            stats: PhysicsConfig::default(),
             frame_input: FrameInput::default(),
             combat_snapshot: CombatInputSnapshot::default(),
             current_tick: 0,
@@ -170,6 +169,7 @@ impl Player {
             grapple_arrived_at_enemy: false,
             prev_position: start_pos,
             is_dead: false,
+            tick_rate: 60,
             pending_audio: Vec::new(),
         }
     }
@@ -199,7 +199,7 @@ impl Player {
         self.wall_grab_timer
     }
 
-    pub fn gather_input(&mut self, ctx: &Context) {
+    pub fn gather_input(&mut self, ctx: &Context<JourneyAction>) {
         if self.state == PlayerState::Death {
             return;
         }
@@ -207,16 +207,18 @@ impl Player {
         self.frame_input = FrameInput {
             move_x: ctx.input.get_move_x(),
             move_y: ctx.input.get_move_y(),
-            jump_down: ctx.input.is_action_just_pressed(GameAction::Jump),
-            jump_held: ctx.input.is_action_pressed(GameAction::Jump),
+            jump_down: ctx.input.is_action_just_pressed(JourneyAction::Jump),
+            jump_held: ctx.input.is_action_pressed(JourneyAction::Jump),
         };
 
         //? Accumulate between fixed steps
-        self.combat_snapshot.attack_pressed |= ctx.input.is_action_just_pressed(GameAction::Attack);
-        self.combat_snapshot.block_pressed |= ctx.input.is_action_just_pressed(GameAction::Block);
-        self.combat_snapshot.dash_pressed |= ctx.input.is_action_just_pressed(GameAction::Dash);
+        self.combat_snapshot.attack_pressed |=
+            ctx.input.is_action_just_pressed(JourneyAction::Attack);
+        self.combat_snapshot.block_pressed |=
+            ctx.input.is_action_just_pressed(JourneyAction::Block);
+        self.combat_snapshot.dash_pressed |= ctx.input.is_action_just_pressed(JourneyAction::Dash);
         self.combat_snapshot.grapple_pressed |=
-            ctx.input.is_action_just_pressed(GameAction::Grapple);
+            ctx.input.is_action_just_pressed(JourneyAction::Grapple);
 
         if self.frame_input.jump_down {
             self.jump_to_consume = true;
@@ -320,7 +322,7 @@ impl Player {
 
     fn enter_dash(&mut self) {
         self.dash_direction = if self.entity.facing_right { 1.0 } else { -1.0 };
-        self.dash_cooldown_timer = DASH_COOLDOWN_TICKS;
+        self.dash_cooldown_timer = config::scale_ticks(DASH_COOLDOWN_TICKS, self.tick_rate);
 
         let is_air = !self.entity.is_grounded;
         if is_air {
@@ -426,18 +428,21 @@ impl Player {
         self.anim_state.play("Idle");
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn fixed_update(
         &mut self,
         dt: f32,
         tick: u64,
+        tick_rate: u32,
         solid_platforms: &[AABB],
         one_way_platforms: &[AABB],
         wall_platforms: &[AABB],
         physics_config: &PhysicsConfig,
     ) {
         self.current_tick = tick;
+        self.tick_rate = tick_rate;
 
-        //? This sync overwrites PlayerStats each tick so the
+        //? This sync overwrites PhysicsConfig each tick so the
         //? egui Physics Tuner takes effect immediately without a recompile.
         self.stats.fall_acceleration = physics_config.gravity;
         self.stats.max_fall_speed = physics_config.max_fall_speed;
@@ -447,13 +452,16 @@ impl Player {
         self.stats.air_decel = physics_config.air_decel;
         self.stats.jump_power = physics_config.jump_power;
         self.stats.jump_end_early_gravity_mod = physics_config.jump_end_early_gravity_mod;
-        self.stats.coyote_ticks = physics_config.coyote_ticks;
-        self.stats.jump_buffer_ticks = physics_config.jump_buffer_ticks;
+        self.stats.coyote_ticks = config::scale_ticks(physics_config.coyote_ticks, tick_rate);
+        self.stats.jump_buffer_ticks =
+            config::scale_ticks(physics_config.jump_buffer_ticks, tick_rate);
         self.cached_wall_slide_speed = physics_config.wall_slide_speed;
         self.cached_wall_jump_power_x = physics_config.wall_jump_power_x;
         self.cached_wall_jump_power_y = physics_config.wall_jump_power_y;
-        self.cached_wall_grab_timeout = physics_config.wall_grab_timeout_ticks;
-        self.cached_wall_jump_lock_ticks = physics_config.wall_jump_lock_ticks;
+        self.cached_wall_grab_timeout =
+            config::scale_ticks(physics_config.wall_grab_timeout_ticks, tick_rate);
+        self.cached_wall_jump_lock_ticks =
+            config::scale_ticks(physics_config.wall_jump_lock_ticks, tick_rate);
 
         //? Save position for render interpolation (before any physics this step)
         self.prev_position = self.entity.position;
@@ -544,7 +552,7 @@ impl Player {
                     dt,
                     physics_config.grapple_pull_speed,
                     physics_config.grapple_slingshot_force,
-                    physics_config.grapple_slingshot_ticks,
+                    config::scale_ticks(physics_config.grapple_slingshot_ticks, tick_rate),
                 );
             }
             PlayerState::GrappleSlingshot => {
@@ -677,7 +685,7 @@ impl Player {
 
         //todo Drop-through: Down + Jump on one-way platform
         if self.frame_input.jump_down && self.frame_input.move_y > 0.5 && self.entity.is_grounded {
-            self.drop_through_timer = 6;
+            self.drop_through_timer = config::scale_ticks(6, self.tick_rate);
             self.jump_to_consume = false;
         }
 
@@ -799,7 +807,8 @@ impl Player {
         let away = -self.wall_direction;
         if self.frame_input.move_x * away > 0.1 {
             self.wall_detach_timer += 1;
-            if self.wall_detach_timer >= WALL_DETACH_GRACE_TICKS {
+            let grace = config::scale_ticks(WALL_DETACH_GRACE_TICKS, self.tick_rate);
+            if self.wall_detach_timer >= grace {
                 self.wall_detach_timer = 0;
                 self.state = PlayerState::Fall;
                 self.anim_state.play("Fall");
@@ -825,7 +834,8 @@ impl Player {
         let away = -self.wall_direction;
         if self.frame_input.move_x * away > 0.1 {
             self.wall_detach_timer += 1;
-            if self.wall_detach_timer >= WALL_DETACH_GRACE_TICKS {
+            let grace = config::scale_ticks(WALL_DETACH_GRACE_TICKS, self.tick_rate);
+            if self.wall_detach_timer >= grace {
                 self.wall_detach_timer = 0;
                 self.state = PlayerState::Fall;
                 self.anim_state.play("Fall");
@@ -971,7 +981,7 @@ impl Player {
             if player_bottom > self.grabbed_wall_bottom {
                 self.grabbed_wall_bottom = f32::INFINITY;
                 self.wall_contact_lost_ticks = 0;
-                self.wall_detach_cooldown = 8;
+                self.wall_detach_cooldown = config::scale_ticks(8, self.tick_rate);
                 self.state = PlayerState::Fall;
                 self.anim_state.play("Fall");
                 return;
@@ -992,7 +1002,7 @@ impl Player {
                 self.wall_contact_lost_ticks += 1;
                 if self.wall_contact_lost_ticks >= 1 {
                     self.wall_contact_lost_ticks = 0;
-                    self.wall_detach_cooldown = 8;
+                    self.wall_detach_cooldown = config::scale_ticks(8, self.tick_rate);
                     self.state = PlayerState::Fall;
                     self.anim_state.play("Fall");
                     return;
@@ -1021,7 +1031,7 @@ impl Player {
         }
     }
 
-    pub fn update(&mut self, ctx: &Context) {
+    pub fn update(&mut self, ctx: &Context<JourneyAction>) {
         let dt = ctx.delta_time;
 
         self.gather_input(ctx);
@@ -1119,6 +1129,10 @@ impl Player {
     //? Interpolated center position for camera tracking (between physics frames).
     pub fn interpolated_position(&self, alpha: f32) -> Vec2 {
         self.prev_position + (self.entity.position - self.prev_position) * alpha
+    }
+
+    pub fn shift_prev_position_y(&mut self, dy: f32) {
+        self.prev_position.y += dy;
     }
 
     pub fn clamp_to_bounds(&mut self, min_x: f32, max_x: f32) {

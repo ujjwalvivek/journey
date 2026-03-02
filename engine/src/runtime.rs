@@ -32,11 +32,6 @@ const SIM_HEIGHT: u32 = 32;
 const MIN_WIDTH: u32 = 320;
 const MIN_HEIGHT: u32 = 240;
 
-//? Internal game resolution, all gameplay renders to this fixed-size offscreen buffer.
-//? Provides the ideal balance between chunky retro aesthetic and enough canvas for dense cyberpunk detail.
-pub const INTERNAL_WIDTH: u32 = 640;
-pub const INTERNAL_HEIGHT: u32 = 360;
-
 const NOISE_REGEN_INTERVAL: Duration = Duration::from_millis(16); //* ~60 Hz
 
 //? On WASM, async GPU init completes after `resumed` returns. The spawned
@@ -99,12 +94,12 @@ impl<G: GameApp> ApplicationHandler for App<G> {
 
         #[cfg(not(target_arch = "wasm32"))]
         let attrs = WindowAttributes::default()
-            .with_title("Untitled Game - Journey Engine")
+            .with_title(G::window_title())
             .with_resizable(true)
             .with_visible(false);
 
         #[cfg(target_arch = "wasm32")]
-        let attrs = WindowAttributes::default().with_title("Untitled Game - Journey Engine");
+        let attrs = WindowAttributes::default().with_title(G::window_title());
 
         let window = Arc::new(
             event_loop
@@ -114,7 +109,8 @@ impl<G: GameApp> ApplicationHandler for App<G> {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if let Ok(img) = image::load_from_memory(include_bytes!("../../web/public/favicon.png"))
+            if let Some(icon_bytes) = G::window_icon()
+                && let Ok(img) = image::load_from_memory(icon_bytes)
             {
                 let img = img.to_rgba8();
                 let (w, h) = img.dimensions();
@@ -333,10 +329,12 @@ struct EngineState<G: GameApp> {
     egui_renderer: egui_wgpu::Renderer,
     camera: Camera,
     sprite_renderer: SpriteRenderer,
-    texture_bind_groups: Vec<wgpu::BindGroup>, //* Index 0 = white pixel, 1-7 = game textures
+    internal_width: u32,
+    internal_height: u32,
+    texture_bind_groups: Vec<wgpu::BindGroup>, //* Index 0 = white pixel, N = loaded textures
     texture_sizes: Vec<(f32, f32)>,            //* Texture dimensions for UV calculation
     game: G,
-    context: Context,
+    context: Context<G::Action>,
     params: SceneParams,
     prev_params: SceneParams,
     last_frame: Instant,
@@ -383,7 +381,7 @@ impl<G: GameApp> EngineState<G> {
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
-                label: Some("Journey Device"),
+                label: Some("Engine Device"),
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::downlevel_webgl2_defaults()
                     .using_resolution(adapter.limits()),
@@ -486,11 +484,12 @@ impl<G: GameApp> EngineState<G> {
 
         //? Create offscreen render target at internal resolution.
         //? All game passes (noise + sprites) render here blitted to surface with nearest-neighbor.
+        let (internal_w, internal_h) = G::internal_resolution();
         let offscreen_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Offscreen Render Target"),
             size: wgpu::Extent3d {
-                width: INTERNAL_WIDTH,
-                height: INTERNAL_HEIGHT,
+                width: internal_w,
+                height: internal_h,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -596,12 +595,12 @@ impl<G: GameApp> EngineState<G> {
         //? Camera and context use the fixed internal resolution.
         let scale_factor = window.scale_factor();
 
-        let camera = Camera::new(INTERNAL_WIDTH as f32, INTERNAL_HEIGHT as f32);
+        let camera = Camera::new(internal_w as f32, internal_h as f32);
         let sprite_renderer = SpriteRenderer::new(&device, &queue, render_format, &camera);
 
         //? Create the game instance, passing in a mutable reference to the context.
         //? The game queues texture loads via ctx.load_texture() during init.
-        let mut context = Context::new(INTERNAL_WIDTH as f32, INTERNAL_HEIGHT as f32);
+        let mut context = Context::new(internal_w as f32, internal_h as f32);
         let game = G::init(&mut context);
 
         //? Process textures queued by the game during init
@@ -664,6 +663,8 @@ impl<G: GameApp> EngineState<G> {
             texture_sizes,
             game,
             context,
+            internal_width: internal_w,
+            internal_height: internal_h,
             prev_params: params.clone(),
             params,
             last_frame: Instant::now(),
@@ -752,7 +753,7 @@ impl<G: GameApp> EngineState<G> {
         //? Compute letterbox viewport (shared by egui constraint + blit pass)
         let sw = self.config.width as f32;
         let sh = self.config.height as f32;
-        let target_aspect = INTERNAL_WIDTH as f32 / INTERNAL_HEIGHT as f32;
+        let target_aspect = self.internal_width as f32 / self.internal_height as f32;
         let window_aspect = sw / sh;
         let (vp_w, vp_h) = if window_aspect > target_aspect {
             (sh * target_aspect, sh)
@@ -859,8 +860,8 @@ impl<G: GameApp> EngineState<G> {
         self.context.pending_shakes.clear();
         self.camera.update_shakes(raw_dt);
 
-        //? Drain deduplicated audio events queued during fixed_update/update/ui
-        self.context.drain_audio_events();
+        //? Drain deduplicated UI audio events queued during fixed_update/update/ui
+        self.context.drain_ui_audio_events();
 
         //? Update camera position based on context before rendering.
         self.camera
@@ -1014,10 +1015,12 @@ impl<G: GameApp> EngineState<G> {
         #[cfg(target_arch = "wasm32")]
         if !self.first_frame_event_sent {
             self.first_frame_event_sent = true;
-            if let Some(web_window) = web_sys::window()
-                && let Ok(event) = web_sys::Event::new("journey:first-frame")
-            {
-                let _ = web_window.dispatch_event(&event);
+            if let Some(event_name) = G::wasm_ready_event() {
+                if let Some(web_window) = web_sys::window()
+                    && let Ok(event) = web_sys::Event::new(event_name)
+                {
+                    let _ = web_window.dispatch_event(&event);
+                }
             }
         }
 

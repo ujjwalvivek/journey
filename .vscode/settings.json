@@ -23,11 +23,15 @@
         "**/node_modules": true,
         "**/dist": true,
         "**/.vscode": false,
-        "**/*.lock": true
+        "**/*.lock": true,
+        "**/builds": true,
+        "**/book": true
     },
     "files.watcherExclude": {
         "**/target/**": true,
         "**/node_modules/**": true,
-        "**/dist/**": true
+        "**/dist/**": true,
+        "**/builds/**": true,
+        "**/book/**": true
     }
 }

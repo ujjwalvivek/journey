@@ -1,0 +1,17 @@
+[book]
+title = "Journey Engine"
+authors = ["ujjwalvivek"]
+description = "A custom 2D game engine built with Rust and wGPU"
+src = "src"
+language = "en"
+
+[build]
+build-dir = "../docs/book"
+
+[output.html]
+site-url = "/docs/"
+git-repository-url = "https://github.com/ujjwalvivek/journey"
+edit-url-template = "https://github.com/ujjwalvivek/journey/edit/main/docs/{path}"
+additional-css = ["theme/catppuccin.css"]
+default-theme = "mocha"
+preferred-dark-theme = "mocha"

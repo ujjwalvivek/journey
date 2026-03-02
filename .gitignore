@@ -3,6 +3,9 @@ debug/
 target/
 **/*.rs.bk
 
+# mdBook build output
+book/
+
 # WASM build artifacts
 /web/pkg/
 *.wasm
@@ -59,3 +62,12 @@ web/*.local
 
 # Game Assets
 game/assets/player/sourcecode/
+
+# Tools
+builds/
+
+# stray binaries if someone runs `go build .` in a module directory
+release/release
+release/release.exe
+versioning/versioning
+versioning/versioning.exe

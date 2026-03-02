@@ -116,7 +116,9 @@ pub fn render_scene_to_buffer(
         if !matches!(perlin_cache, Some((s, _)) if *s == params.seed) {
             *perlin_cache = Some((params.seed, Perlin::new(params.seed)));
         }
-        let perlin = &perlin_cache.as_ref().unwrap().1;
+        let Some((_, perlin)) = perlin_cache.as_ref() else {
+            return;
+        };
 
         let fog_rgb = color_f32_to_u8(params.fog_color);
         apply_fog(

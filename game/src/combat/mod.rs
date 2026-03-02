@@ -1,6 +1,6 @@
 /**--------------------------------------------------------------------------------
-*!  Combat system types for Sekiro-style gameplay.
-*?  Defines Health, Posture, Hitbox, and the frame-deterministic combat FSM.
+*!  Combat system types for Sekiro-Ghostrunner-style gameplay.
+*?  Defines Health, Hitbox, and the frame-deterministic combat FSM.
 *?  All combat timing uses integer tick counts (at 60Hz) for deterministic
 *?  frame-data windows - never float accumulators.
 *--------------------------------------------------------------------------------**/
@@ -36,44 +36,6 @@ impl Health {
     }
 }
 
-//? When posture breaks (current >= max), the entity is staggered.
-#[derive(Debug, Clone)]
-pub struct Posture {
-    pub current: f32,
-    pub max: f32,
-    pub recovery_rate: f32,
-}
-
-impl Posture {
-    pub fn new(max: f32, recovery_rate: f32) -> Self {
-        Self {
-            current: 0.0,
-            max,
-            recovery_rate,
-        }
-    }
-
-    pub fn add_damage(&mut self, amount: f32) {
-        self.current = (self.current + amount).min(self.max);
-    }
-
-    pub fn recover(&mut self, dt: f32) {
-        self.current = (self.current - self.recovery_rate * dt).max(0.0);
-    }
-
-    pub fn is_broken(&self) -> bool {
-        self.current >= self.max
-    }
-
-    pub fn fraction(&self) -> f32 {
-        self.current / self.max
-    }
-
-    pub fn reset(&mut self) {
-        self.current = 0.0;
-    }
-}
-
 //? The Hitbox struct represents a tick-windowed hitbox (knows both where and when it's active).
 //? Spawned by attack animations and destroyed when the window closes.
 //? Currently the live system uses  BoxVolume + CombatPhase::Active for timing.
@@ -106,16 +68,6 @@ mod tests {
         h.take_damage(100.0);
         assert_eq!(h.current, 0.0);
         assert!(h.is_dead());
-    }
-
-    #[test]
-    fn posture_break_and_recover() {
-        let mut p = Posture::new(100.0, 10.0);
-        p.add_damage(100.0);
-        assert!(p.is_broken());
-        p.reset();
-        assert!(!p.is_broken());
-        assert_eq!(p.current, 0.0);
     }
 
     #[test]

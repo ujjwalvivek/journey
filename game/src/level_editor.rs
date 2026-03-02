@@ -5,7 +5,8 @@
 *?  Text mode: Edit the raw ASCII level string with a live minimap preview.
 *--------------------------------------------------------------------------------**/
 use crate::level::Level;
-use engine::{AudioEvent, AudioResponse};
+use engine::egui;
+use engine::{AudioResponse, UiAudioEvent};
 
 pub struct LevelEditor {
     pub active: bool,
@@ -25,23 +26,7 @@ impl Default for LevelEditor {
 impl LevelEditor {
     pub fn new() -> Self {
         //? Load the current level text so the buffer is populated initially
-        let initial_text = {
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                std::fs::read_to_string("game/assets/level/world.txt")
-                    .unwrap_or_else(|_| include_str!("../assets/level/world.txt").to_string())
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                let window = web_sys::window().unwrap();
-                let storage = window.local_storage().unwrap().unwrap();
-                if let Ok(Some(saved)) = storage.get_item("world.txt") {
-                    saved
-                } else {
-                    include_str!("../assets/level/world.txt").to_string()
-                }
-            }
-        };
+        let initial_text = Level::load_level_text();
 
         Self {
             active: false,
@@ -77,7 +62,7 @@ impl LevelEditor {
         level: &mut Level,
         screen_width: f32,
         screen_height: f32,
-        pending_audio: &mut Vec<AudioEvent>,
+        pending_audio: &mut Vec<UiAudioEvent>,
     ) {
         if !self.active {
             return;
@@ -95,7 +80,7 @@ impl LevelEditor {
         ctx: &egui::Context,
         level: &mut Level,
         screen_height: f32,
-        pending_audio: &mut Vec<AudioEvent>,
+        pending_audio: &mut Vec<UiAudioEvent>,
     ) {
         let letterbox = crate::start_sequence::menu_letterbox_rect(ctx);
         let total_h = letterbox.height();
@@ -354,10 +339,13 @@ impl LevelEditor {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            let window = web_sys::window().unwrap();
-            let storage = window.local_storage().unwrap().unwrap();
-            if let Err(e) = storage.set_item("world.txt", &self.text_buffer) {
-                log::error!("Failed to save WASM level to local storage: {:?}", e);
+            if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+            {
+                if let Err(e) = storage.set_item("world.txt", &self.text_buffer) {
+                    log::error!("Failed to save WASM level to local storage: {:?}", e);
+                }
+            } else {
+                log::warn!("localStorage unavailable, level not saved");
             }
         }
 
@@ -372,7 +360,7 @@ impl LevelEditor {
         level: &mut Level,
         _game_w: f32,
         _game_h: f32,
-        pending_audio: &mut Vec<AudioEvent>,
+        pending_audio: &mut Vec<UiAudioEvent>,
     ) {
         let internal_w = 640.0;
         let internal_h = 360.0;

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	toml "github.com/pelletier/go-toml/v2"
 )
@@ -66,19 +67,12 @@ func writePackageVersion(pkgPath, version string) error {
 	if err != nil {
 		return err
 	}
-
-	var pkg map[string]any
-	if err := json.Unmarshal(b, &pkg); err != nil {
-		return err
+	re := regexp.MustCompile(`("version"\s*:\s*)"[^"]*"`)
+	updated := re.ReplaceAll(b, []byte(`${1}"`+version+`"`))
+	if len(updated) == len(b) && string(updated) == string(b) {
+		return nil
 	}
-
-	pkg["version"] = version
-	out, err := json.MarshalIndent(pkg, "", "  ")
-	if err != nil {
-		return err
-	}
-	out = append(out, '\n')
-	return os.WriteFile(pkgPath, out, 0644)
+	return os.WriteFile(pkgPath, updated, 0644)
 }
 
 func findRepoRoot(start string) (string, error) {
@@ -161,4 +155,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-

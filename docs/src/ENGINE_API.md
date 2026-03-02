@@ -2,7 +2,7 @@
 
 > Public API documentation for the `journey-engine` crate with usage examples from `game`.
 >
-> **Version:** 0.3.2 · **Crate type:** `rlib`
+> **Version:** 1.1.2 · **Crate type:** `rlib`
 
 ---
 

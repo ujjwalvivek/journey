@@ -1,6 +1,6 @@
 # Journey Engine Technical Documentation
 
-> **Version:** 0.3.2 · **Edition:** Rust 2024 · **License:** MIT
+> **Version:** 1.1.2 · **Edition:** Rust 2024 · **License:** MIT
 > **Repository:** [github.com/ujjwalvivek/journey](https://github.com/ujjwalvivek/journey)
 
 ---

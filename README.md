@@ -2,7 +2,7 @@
 
 [![NPM Version](https://img.shields.io/npm/v/@ujjwalvivek/journey-engine?style=for-the-badge&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@ujjwalvivek/journey-engine)
 [![Crates.io](https://img.shields.io/crates/v/journey-engine.svg?style=for-the-badge&logo=rust&logoColor=white&label=crate)](https://crates.io/crates/journey-engine)
-[![Docs.rs](https://img.shields.io/docsrs/journey-engine?style=for-the-badge&logo=rust&logoColor=white&label=docs)](https://docs.journey.ujjwalvivek.com)
+[![Docs](https://img.shields.io/badge/docs-journey.ujjwalvivek.com-blue?style=for-the-badge&logo=rust&logoColor=white&label=docs)](https://docs.journey.ujjwalvivek.com)
 [![Publish Status](https://img.shields.io/github/actions/workflow/status/ujjwalvivek/journey/publish.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=Publish)](https://github.com/ujjwalvivek/journey/actions)
 [![License](https://img.shields.io/github/license/ujjwalvivek/journey?style=for-the-badge&logo=github&logoColor=white&label=License)](LICENSE)
 

@@ -3,7 +3,7 @@
 A cross-platform 2D game engine built with Rust and wGPU.
 
 [![Crates.io](https://img.shields.io/crates/v/journey-engine.svg?style=for-the-badge&logo=rust&logoColor=white&label=crate)](https://crates.io/crates/journey-engine)
-[![Docs.rs](https://img.shields.io/docsrs/journey-engine?style=for-the-badge&logo=rust&logoColor=white&label=docs)](https://docs.journey.ujjwalvivek.com)
+[![Docs](https://img.shields.io/badge/docs-journey.ujjwalvivek.com-blue?style=for-the-badge&logo=rust&logoColor=white&label=docs)](https://docs.journey.ujjwalvivek.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge&logo=github&logoColor=white&label=license)](LICENSE)
 
 ## Features

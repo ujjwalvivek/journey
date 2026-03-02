@@ -1,4 +1,4 @@
-/docs    /docs/index.html    200
-/docs/*  /docs/:splat        200
-/api     /docs/ENGINE_API.html     301
-/api/*   /docs/ENGINE_API.html     301
+/api     https://docs.journey.ujjwalvivek.com/ENGINE_API.html     301
+/api/*   https://docs.journey.ujjwalvivek.com/ENGINE_API.html     301
+/docs    https://docs.journey.ujjwalvivek.com                     301
+/docs/*  https://docs.journey.ujjwalvivek.com/:splat              301

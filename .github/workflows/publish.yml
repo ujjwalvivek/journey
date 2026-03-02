@@ -223,18 +223,30 @@ jobs:
           MDBOOK_VER=v0.4.47
           curl -sSL "https://github.com/rust-lang/mdBook/releases/download/${MDBOOK_VER}/mdbook-${MDBOOK_VER}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
 
-      - name: Build Documentation
+      - name: Install mdBook
         run: |
-          mdbook build docs
-          mkdir -p web/dist/docs
-          cp -r docs/book/. web/dist/docs/
+          MDBOOK_VER=v0.4.47
+          curl -sSL "https://github.com/rust-lang/mdBook/releases/download/${MDBOOK_VER}/mdbook-${MDBOOK_VER}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
 
-      - name: Deploy to Cloudflare
+      - name: Build Documentation
+        run: mdbook build docs
+
+      - name: Deploy Game to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: journey
           directory: web/dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+
+      - name: Deploy Docs to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: journey-docs
+          directory: docs/book
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: main

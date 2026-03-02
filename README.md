@@ -140,13 +140,11 @@ This forces a clean API from `engine` to `game`. It also allows the engine to be
 
 ### Interim
 
-- [ ] Polish the level design to showcase the mechanics effectively.
 - [ ] Plan for future features and create a roadmap for MVP2.
 
 ## Media and Resources
 
 ![Crate Architecture](docs/assets/architecture.png)
-![Gameloop](docs/assets/gameloop.png)
 ![Render Pipeline](docs/assets/renderpipeline.png)
 
 ## Docs
@@ -155,6 +153,6 @@ This forces a clean API from `engine` to `game`. It also allows the engine to be
 - [The Rust Book](https://doc.rust-lang.org/)
 - [wgpu Docs](https://docs.rs/wgpu/latest/wgpu/)
 - [Game Programming Patterns](http://gameprogrammingpatterns.com/)
-- [Engine API Guide](https://github.com/ujjwalvivek/journey/blob/main/docs/ENGINE_API.md)
-- [Technical Documentation](https://github.com/ujjwalvivek/journey/blob/main/docs/TECHNICAL_DOCUMENTATION.md)
+- [Engine API Guide](https://github.com/ujjwalvivek/journey/blob/main/docs/src/ENGINE_API.md)
+- [Technical Documentation](https://github.com/ujjwalvivek/journey/blob/main/docs/src/TECHNICAL_DOCUMENTATION.md)
 - [Post-Mortem Blog Post](https://ujjwalvivek.com/blog/)

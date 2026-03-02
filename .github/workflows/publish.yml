@@ -175,6 +175,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Linux Dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+
       - name: Publish to crates.io
         run: cargo publish -p journey-engine
         env:
@@ -215,14 +218,14 @@ jobs:
 
       - name: Install mdBook
         run: |
-          MDBOOK_VER=v0.4.40
+          MDBOOK_VER=v0.4.47
           curl -sSL "https://github.com/rust-lang/mdBook/releases/download/${MDBOOK_VER}/mdbook-${MDBOOK_VER}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
 
       - name: Build Documentation
         run: |
           mdbook build docs
           mkdir -p web/dist/docs
-          cp -r book/. web/dist/docs/
+          cp -r docs/book/. web/dist/docs/
 
       - name: Deploy to Cloudflare
         uses: cloudflare/pages-action@v1

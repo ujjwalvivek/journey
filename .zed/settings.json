@@ -1,0 +1,50 @@
+{
+  "semantic_tokens": "combined",
+  "format_on_save": "on",
+  "inlay_hints": {
+    "enabled": true,
+    "show_type_hints": true,
+    "show_parameter_hints": true,
+  },
+  "languages": {
+    "Rust": {
+      "formatter": "language_server",
+    },
+    "TypeScript": {
+      "formatter": "language_server",
+    },
+  },
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "checkOnSave": true,
+        "check": {
+          "command": "clippy",
+          "extraArgs": ["--", "-D", "warnings"],
+        },
+        "cargo": {
+          "buildScripts": {
+            "enable": true,
+          },
+        },
+        "inlayHints": {
+          "typeHints": {
+            "enable": true,
+          },
+          "parameterHints": {
+            "enable": true,
+          },
+        },
+      },
+    },
+  },
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/target",
+    "**/node_modules",
+    "**/dist",
+    "**/builds",
+    "**/book",
+    "**/*.lock",
+  ],
+}

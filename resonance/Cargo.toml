@@ -1,0 +1,23 @@
+[package]
+name = "journey-audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[lib]
+name = "resonance"
+crate-type = ["rlib"]
+
+[features]
+default = []
+convert = []
+wasm = []
+
+[dependencies]
+# zero runtime dependencies
+
+[build-dependencies]
+# build.rs uses only std

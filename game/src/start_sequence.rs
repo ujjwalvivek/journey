@@ -6,6 +6,15 @@ use crate::{GameState, JourneyGame, MenuReturnState, OptionsTab};
 use engine::egui;
 use engine::{AudioResponse, AudioTrack, Context, UiAudioEvent};
 
+#[cfg(target_arch = "wasm32")]
+fn open_resonance_panel() {
+    if let Some(web_window) = web_sys::window() {
+        if let Ok(event) = web_sys::Event::new("journey:open-resonance") {
+            let _ = web_window.dispatch_event(&event);
+        }
+    }
+}
+
 pub(crate) fn menu_letterbox_rect(ctx: &egui::Context) -> egui::Rect {
     let screen_rect = ctx.viewport_rect();
     let target_aspect = 16.0 / 9.0;
@@ -133,7 +142,7 @@ impl JourneyGame {
                     #[cfg(not(target_arch = "wasm32"))]
                     let menu_count: usize = 4;
                     #[cfg(target_arch = "wasm32")]
-                    let menu_count: usize = 3;
+                    let menu_count: usize = 4;
 
                     if engine_ctx
                         .input
@@ -258,6 +267,19 @@ impl JourneyGame {
                                 }
                                 idx += 1;
                                 ui.add_space(spacing);
+
+                                #[cfg(target_arch = "wasm32")]
+                                {
+                                    let r = ui
+                                        .add_sized(
+                                            [btn_w, btn_h],
+                                            menu_btn("Resonance", self.menu_index == idx),
+                                        )
+                                        .with_ui_sound(&mut engine_ctx.pending_ui_audio);
+                                    if r.clicked() || (self.menu_index == idx && confirmed) {
+                                        open_resonance_panel();
+                                    }
+                                }
 
                                 #[cfg(not(target_arch = "wasm32"))]
                                 {

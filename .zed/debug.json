@@ -1,0 +1,34 @@
+[
+  {
+    "label": "Debug Native",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/target/debug/journey.exe",
+    "build": {
+      "command": "cargo",
+      "args": ["build", "-p", "journey-game", "--bin", "journey"]
+    },
+    "args": [],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "sourceLanguages": ["rust"]
+  },
+  {
+    "label": "Debug Tests",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/target/debug/deps/engine-tests.exe",
+    "build": {
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "cargo test -p journey-engine --no-run --lib; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $bin = Get-ChildItem -Path target/debug/deps -Filter 'engine-*.exe' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if (-not $bin) { Write-Error 'No engine test binary found'; exit 1 }; Copy-Item -LiteralPath $bin.FullName -Destination target/debug/deps/engine-tests.exe -Force"
+      ]
+    },
+    "args": [],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "sourceLanguages": ["rust"]
+  }
+]

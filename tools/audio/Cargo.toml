@@ -1,0 +1,30 @@
+[package]
+name = "resonance-wasm"
+version = "0.1.0"
+edition = "2024"
+description = "CLI and WASM bridge for the resonance DSP crate."
+license = "MIT"
+repository = "https://github.com/ujjwalvivek/journey"
+
+[lib]
+name = "resonance_wasm"
+path = "src/web.rs"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "resonance-cli"
+path = "src/main.rs"
+
+[workspace]
+# Standalone tool
+
+[dependencies]
+resonance = { package = "journey-audio", path = "../../resonance", features = ["wasm"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+cpal = "0.17"
+crossterm = "0.28"
+ratatui = "0.29"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"

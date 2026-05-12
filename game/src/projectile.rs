@@ -8,11 +8,10 @@
 use crate::combat::fsm::CombatPhase;
 use crate::combat::moves::MoveId;
 use crate::config::*;
-use crate::input::JourneyAction;
 use crate::enemy::EnemyHandle;
 use crate::entity::Entity;
+use crate::input::JourneyAction;
 use engine::{AABB, Vec2};
-
 
 const PROJECTILE_SIZE: f32 = 4.0; //* 4×4 pixel bullet
 pub const PROJECTILE_SPEED: f32 = 200.0; //* px/s   Grunt default
@@ -297,6 +296,7 @@ mod tests {
         assert_eq!(pool.alive_count(), 1);
         assert_eq!(pool.projectiles[0].bounces, 1); //* First collision = ricochet (bounces 0 → 1)
         pool.collide_walls(&[wall], 1.0 / 60.0); //* Second collision = despawn
+        
         //? Might still be alive if nudged out of wall; force position back in
         pool.projectiles[0].position = Vec2::new(10.0, 10.0);
         pool.collide_walls(&[wall], 1.0 / 60.0);
@@ -404,7 +404,7 @@ mod tests {
             100.0,
             [1.0, 0.0, 0.0, 1.0],
         ); //* Kill the projectile
-        pool.projectiles[0].alive = false; 
+        pool.projectiles[0].alive = false;
 
         //? Spawn another. Should reuse the slot
         pool.spawn(

@@ -1,5 +1,5 @@
 [workspace]
-members = ["engine", "game"]
+members = ["engine", "game", "resonance"]
 resolver = "2"
 
 [workspace.package]

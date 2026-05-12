@@ -1,0 +1,104 @@
+[
+  {
+    "label": "Run Native (Debug)",
+    "command": "cargo",
+    "args": ["run", "-p", "journey-game"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "Run Native (Release)",
+    "command": "cargo",
+    "args": ["run", "-p", "journey-game", "--release"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "Run Web Dev Server",
+    "command": "npm",
+    "args": ["run", "dev"],
+    "cwd": "$ZED_WORKTREE_ROOT/web",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "Quick Web Dev (skip WASM rebuild)",
+    "command": "npm",
+    "args": ["run", "dev:quick"],
+    "cwd": "$ZED_WORKTREE_ROOT/web",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "Build WASM",
+    "command": "wasm-pack",
+    "args": ["build", "game", "--target", "web", "--out-dir", "../game/pkg"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "Build Native",
+    "command": "cargo",
+    "args": ["build", "-p", "journey-game"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "Run Tests",
+    "command": "cargo",
+    "args": ["test", "-p", "journey-engine"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "Clippy (All)",
+    "command": "cargo",
+    "args": ["clippy", "-p", "journey-engine", "-p", "journey-game", "--", "-D", "warnings"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "Build All (Native + WASM + Web)",
+    "command": "cmd",
+    "args": [
+      "/C",
+      "cargo build -p journey-game && wasm-pack build game --target web --out-dir ../game/pkg"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  }
+]

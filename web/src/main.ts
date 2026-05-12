@@ -1,3 +1,7 @@
+import { setupResonancePanel } from "./components/resonance/resonance.ts";
+
+type GameInit = () => Promise<unknown>;
+
 async function run() {
     const bootTitle = document.getElementById("title");
     const bootFill = document.getElementById("progress-fill") as HTMLDivElement | null;
@@ -5,8 +9,8 @@ async function run() {
     const bootHint = document.getElementById("hint");
 
     const setText = (title: string) => { if (bootTitle) bootTitle.textContent = title; };
-    const setStatus = (s: string) => { if (bootStatus) bootStatus.textContent = s; };
-    const setHint = (s: string) => { if (bootHint) bootHint.textContent = s; };
+    const setStatus = (status: string) => { if (bootStatus) bootStatus.textContent = status; };
+    const setHint = (hint: string) => { if (bootHint) bootHint.textContent = hint; };
 
     const trickleProgress = (ceiling: number, durationS: number) => {
         if (!bootFill) return;
@@ -16,10 +20,10 @@ async function run() {
     };
 
     document.body.classList.remove("ready");
-    setText("Loading engine…");
+    setText("Loading engine...");
     setStatus("downloading");
     setHint("");
-    if (bootFill) bootFill.classList.remove("done");
+    bootFill?.classList.remove("done");
 
     const firstFrameReady = new Promise<void>((resolve) => {
         window.addEventListener("journey:first-frame", () => resolve(), { once: true });
@@ -29,15 +33,15 @@ async function run() {
     const version = urlParams.get("v");
 
     try {
-        let init: () => Promise<unknown>;
+        let init: GameInit;
 
         if (version) {
             const cdnUrl = `https://cdn.jsdelivr.net/npm/@ujjwalvivek/journey-engine@${version}/game.js`;
             const module = await import(/* @vite-ignore */ cdnUrl);
-            init = module.default;
+            init = module.default as GameInit;
         } else {
             const module = await import("../../game/pkg/game.js");
-            init = module.default;
+            init = module.default as GameInit;
         }
 
         setText("Initializing Engine");
@@ -52,6 +56,7 @@ async function run() {
         trickleProgress(0.95, 10);
 
         await firstFrameReady;
+        setupResonancePanel();
 
         if (bootFill) {
             bootFill.style.transition = "none";

@@ -4,15 +4,15 @@
   "inlay_hints": {
     "enabled": true,
     "show_type_hints": true,
-    "show_parameter_hints": true,
+    "show_parameter_hints": true
   },
   "languages": {
     "Rust": {
-      "formatter": "language_server",
+      "formatter": "language_server"
     },
     "TypeScript": {
-      "formatter": "language_server",
-    },
+      "formatter": "language_server"
+    }
   },
   "lsp": {
     "rust-analyzer": {
@@ -20,23 +20,23 @@
         "checkOnSave": true,
         "check": {
           "command": "clippy",
-          "extraArgs": ["--", "-D", "warnings"],
+          "extraArgs": ["--", "-D", "warnings"]
         },
         "cargo": {
           "buildScripts": {
-            "enable": true,
+            "enable": true
           },
         },
         "inlayHints": {
           "typeHints": {
-            "enable": true,
+            "enable": true
           },
           "parameterHints": {
-            "enable": true,
-          },
-        },
-      },
-    },
+            "enable": true
+          }
+        }
+      }
+    }
   },
   "file_scan_exclusions": [
     "**/.git",
@@ -45,6 +45,6 @@
     "**/dist",
     "**/builds",
     "**/book",
-    "**/*.lock",
-  ],
+    "**/*.lock"
+  ]
 }

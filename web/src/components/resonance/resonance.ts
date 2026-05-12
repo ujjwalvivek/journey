@@ -489,7 +489,7 @@ function drawScope(controls: ResonanceControls, state: ResonanceState) {
     ctx.fillRect(0, 0, width, height);
 
     ctx.strokeStyle = "#1f2a31";
-    ctx.lineWidth = 1 * dpr;
+    ctx.lineWidth = dpr;
     for (let i = 1; i < 8; i += 1) {
         const x = (width / 8) * i;
         ctx.beginPath();

@@ -21,6 +21,7 @@ pub mod sprite;
 pub mod texture;
 pub mod texture_manager;
 pub mod time;
+pub mod ui;
 
 //* Re-export commonly used types
 pub use animation::{AnimationDef, AnimationState};

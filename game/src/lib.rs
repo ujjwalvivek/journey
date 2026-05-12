@@ -1123,7 +1123,7 @@ impl GameApp for JourneyGame {
             GameState::Paused => {
                 self.show_paused_menu(ctx, engine_ctx);
             }
-            GameState::LevelEditor { .. } => {
+            GameState::LevelEditor { return_state } => {
                 self.level_editor.show_ui(
                     ctx,
                     params,
@@ -1132,6 +1132,9 @@ impl GameApp for JourneyGame {
                     self.initial_screen_height,
                     &mut engine_ctx.pending_ui_audio,
                 );
+                if self.level_editor.take_close_request() {
+                    self.close_level_editor(return_state);
+                }
             }
             GameState::InGame => {
                 crate::scene::show_ui(crate::scene::DebugUiParams {

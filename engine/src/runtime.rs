@@ -571,11 +571,12 @@ impl<G: GameApp> EngineState<G> {
         //? Initialize egui context, state, and renderer.
         let egui_ctx = egui::Context::default();
 
+        let ui_theme = crate::ui::theme();
         let mut visuals = egui::Visuals::dark();
-        visuals.window_fill = egui::Color32::from_rgba_unmultiplied(40, 40, 43, 255);
-        visuals.window_corner_radius = egui::CornerRadius::same(2);
+        visuals.window_fill = ui_theme.panel;
+        visuals.window_corner_radius = egui::CornerRadius::same(0);
         visuals.window_shadow = egui::Shadow::NONE;
-        visuals.panel_fill = egui::Color32::from_rgba_unmultiplied(40, 40, 43, 255);
+        visuals.panel_fill = ui_theme.panel;
         egui_ctx.set_visuals(visuals);
 
         let egui_state = egui_winit::State::new(
@@ -773,6 +774,7 @@ impl<G: GameApp> EngineState<G> {
         ));
         let ctx = &mut self.context;
         let full_output = self.egui_ctx.run(raw_input, |egui_ctx| {
+            crate::ui::apply_theme(egui_ctx);
             self.game.ui(egui_ctx, ctx, &mut params);
         });
 

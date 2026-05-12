@@ -8,4 +8,4 @@ edition = "2024"
 license = "MIT"
 description = "Journey Engine: A custom 2D game engine built with Rust and wGPU"
 repository = "https://github.com/ujjwalvivek/journey"
-keywords = ["game-engine", "2d", "wgpu", "cross-platform"]
+keywords = ["game-engine", "two-dimensional", "wgpu", "cross-platform"]

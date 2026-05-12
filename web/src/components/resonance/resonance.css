@@ -1,13 +1,13 @@
 #resonance-panel {
-    --res-panel: #0a0a0a;
-    --res-panel-2: #141414;
-    --res-line: #1a1a1a;
-    --res-text: #fff;
-    --res-muted: #666;
-    --res-cyan: #00ffff;
-    --res-amber: #ffff00;
-    --res-red: #ff0000;
-    --res-green: #00ff00;
+    --res-panel: #050506;
+    --res-panel-2: #111113;
+    --res-line: #2a2a2d;
+    --res-text: #f6f6f4;
+    --res-muted: #969694;
+    --res-cyan: #5ef2ff;
+    --res-amber: #f6f6f4;
+    --res-red: #5ef2ff;
+    --res-green: #f6f6f4;
     position: fixed;
     top: 50%;
     right: 32px;
@@ -16,11 +16,11 @@
     max-height: calc(100vh - 64px);
     overflow: auto;
     transform: translateY(-50%);
-    border: 2px solid var(--res-cyan);
+    border: 1px solid var(--res-text);
     background: var(--res-panel);
     color: var(--res-text);
     font-family: "Monaspace Neon", monospace;
-    letter-spacing: 0.05em;
+    letter-spacing: 0;
 }
 
 #resonance-panel,
@@ -43,7 +43,7 @@
 .resonance-topbar {
     grid-template-columns: 1fr auto auto;
     align-items: center;
-    border-bottom: 2px solid var(--res-cyan);
+    border-bottom: 1px solid var(--res-line);
     padding: 16px;
     gap: 12px;
 }
@@ -52,7 +52,7 @@
     margin: 0 0 4px;
     color: var(--res-cyan);
     font-size: 0.75rem;
-    letter-spacing: 0.15em;
+    letter-spacing: 0;
     text-transform: uppercase;
     font-weight: 700;
 }
@@ -63,13 +63,12 @@
     color: var(--res-muted);
     font-size: 0.75rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0;
     font-weight: 500;
 }
 
 .resonance-status.error {
-    color: var(--res-red);
-    text-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+    color: var(--res-cyan);
 }
 
 #resonance-panel button,
@@ -79,7 +78,7 @@
 }
 
 #resonance-panel button {
-    border: 2px solid var(--res-cyan);
+    border: 1px solid var(--res-line);
     color: var(--res-text);
     background: var(--res-panel-2);
     cursor: pointer;
@@ -90,7 +89,7 @@
 }
 
 #resonance-panel button:hover {
-    background: var(--res-cyan);
+    background: var(--res-text);
     color: var(--res-panel);
 }
 
@@ -129,19 +128,19 @@
     aspect-ratio: 48 / 13;
     min-height: 180px;
     margin: 0;
-    border-top: 2px solid var(--res-line);
-    border-bottom: 2px solid var(--res-cyan);
+    border-top: 1px solid var(--res-line);
+    border-bottom: 1px solid var(--res-line);
     background: var(--res-panel-2);
 }
 
 .resonance-grid {
     grid-template-columns: 1fr;
-    border-top: 2px solid var(--res-line);
+    border-top: 1px solid var(--res-line);
 }
 
 .resonance-adsr {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    border-top: 2px solid var(--res-line);
+    border-top: 1px solid var(--res-line);
 }
 
 .resonance-control {
@@ -150,8 +149,8 @@
     grid-template-columns: 1fr auto;
     gap: 8px 12px;
     padding: 12px;
-    border-right: 2px solid var(--res-line);
-    border-bottom: 2px solid var(--res-line);
+    border-right: 1px solid var(--res-line);
+    border-bottom: 1px solid var(--res-line);
     background: var(--res-panel);
 }
 
@@ -164,7 +163,7 @@
     color: var(--res-muted);
     font-size: 0.75rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0;
     font-weight: 600;
 }
 
@@ -172,7 +171,6 @@
     color: var(--res-amber);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    text-shadow: 0 0 5px rgba(255, 255, 0, 0.3);
 }
 
 .resonance-control input[type="range"] {
@@ -184,6 +182,8 @@
 }
 
 .resonance-slider {
+    --fill: 50%;
+    --position: 50%;
     grid-column: 1 / -1;
     position: relative;
     height: 20px;
@@ -201,8 +201,8 @@
     right: 0;
     height: 8px;
     transform: translateY(-50%);
-    border: 1px solid var(--res-cyan);
-    background: linear-gradient(to right, var(--res-cyan) var(--fill, 50%), var(--res-line) var(--fill, 50%));
+    border: 1px solid var(--res-line);
+    background: linear-gradient(to right, var(--res-cyan) var(--fill, 50%), #000 var(--fill, 50%));
 }
 
 .resonance-slider-thumb {
@@ -212,8 +212,8 @@
     transform: translate(-50%, -50%);
     width: 12px;
     height: 12px;
-    background: linear-gradient(135deg, var(--res-cyan) 0%, var(--res-amber) 100%);
-    border: 1px solid var(--res-cyan);
+    background: var(--res-text);
+    border: 1px solid var(--res-text);
     cursor: grab;
 }
 
@@ -246,13 +246,13 @@
 }
 
 .resonance-waveforms button.active {
-    background: var(--res-cyan);
+    background: var(--res-text);
     color: var(--res-panel);
-    border: 2px solid var(--res-cyan);
+    border: 1px solid var(--res-text);
 }
 
 .resonance-patch-grid button:active {
-    background: var(--res-amber);
+    background: var(--res-cyan);
     color: var(--res-panel);
 }
 

@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(pool.alive_count(), 1);
         assert_eq!(pool.projectiles[0].bounces, 1); //* First collision = ricochet (bounces 0 → 1)
         pool.collide_walls(&[wall], 1.0 / 60.0); //* Second collision = despawn
-        
+
         //? Might still be alive if nudged out of wall; force position back in
         pool.projectiles[0].position = Vec2::new(10.0, 10.0);
         pool.collide_walls(&[wall], 1.0 / 60.0);

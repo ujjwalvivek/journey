@@ -9,7 +9,7 @@ use crate::enemy::Enemy;
 use crate::player::PlayerState;
 use engine::SceneParams;
 use engine::egui;
-use engine::{AudioResponse, UiAudioEvent};
+use engine::{AudioResponse, UiAudioEvent, ui as journey_ui};
 
 #[derive(Debug, Clone, Default)]
 pub struct GameScene {
@@ -72,6 +72,7 @@ pub fn show_ui(p: DebugUiParams<'_>) {
         pending_audio,
     } = p;
     scene.params = params.clone();
+    let theme = journey_ui::theme();
 
     let content_rect = ctx.available_rect();
     let window_width = 280.0f32.min(content_rect.width() * 0.9);
@@ -135,33 +136,30 @@ pub fn show_ui(p: DebugUiParams<'_>) {
                 ui.label(format!("Frame: {}", combat.frame_timer));
                 ui.label(format!("Move: {:?}", combat.current_move));
                 if combat.invincible {
-                    ui.colored_label(egui::Color32::YELLOW, "I-FRAMES");
+                    ui.colored_label(theme.accent, "I-FRAMES");
                 }
                 if dash_cooldown > 0 {
                     ui.label(format!("Dash CD: {}", dash_cooldown));
                 }
                 if has_air_dashed {
-                    ui.colored_label(egui::Color32::from_rgb(255, 180, 100), "Air-dash used");
+                    ui.colored_label(theme.muted, "Air-dash used");
                 }
                 if wall_left || wall_right {
                     let side = if wall_left { "LEFT" } else { "RIGHT" };
-                    ui.colored_label(
-                        egui::Color32::from_rgb(100, 255, 100),
-                        format!("Wall: {}", side),
-                    );
+                    ui.colored_label(theme.accent, format!("Wall: {}", side));
                 }
                 if wall_grab_timer > 0 {
                     ui.label(format!("Wall grab: {} ticks", wall_grab_timer));
                 }
                 if let Some(target) = grapple_target {
                     ui.colored_label(
-                        egui::Color32::from_rgb(50, 220, 255),
+                        theme.accent,
                         format!("Grapple: ({:.0}, {:.0})", target.x, target.y),
                     );
                 }
                 if input_buffer.has_pending() {
                     ui.colored_label(
-                        egui::Color32::from_rgb(100, 200, 255),
+                        theme.accent,
                         format!("Input Queue: {} pending", input_buffer.len()),
                     );
                 }
@@ -207,97 +205,251 @@ pub fn show_physics_tuner_window(
 }
 
 pub fn physics_tuner_ui(ui: &mut egui::Ui, cfg: &mut PhysicsConfig) {
-    ui.heading("Gravity");
-    ui.add(
-        egui::Slider::new(&mut cfg.gravity, 10.0..=5000.0)
-            .text("gravity (px/s²)")
-            .logarithmic(true),
-    );
-    ui.add(egui::Slider::new(&mut cfg.max_fall_speed, 50.0..=2000.0).text("max fall speed"));
+    let scale = (ui.ctx().viewport_rect().height() / 1080.0).clamp(0.45, 1.0);
+    let section_gap = 14.0 * scale;
 
-    ui.separator();
-    ui.heading("Movement");
-    ui.add(egui::Slider::new(&mut cfg.movement_speed, 50.0..=1200.0).text("move speed"));
-    ui.add(
-        egui::Slider::new(&mut cfg.acceleration, 100.0..=20000.0)
-            .text("acceleration")
-            .logarithmic(true),
+    ui.label(journey_ui::command_label("Gravity", 13.0 * scale));
+    journey_ui::slider_f32_log(
+        ui,
+        "Gravity px/s2",
+        &mut cfg.gravity,
+        10.0..=5000.0,
+        scale,
+        |v| format!("{v:.0}"),
     );
-    ui.add(
-        egui::Slider::new(&mut cfg.ground_decel, 100.0..=20000.0)
-            .text("ground decel")
-            .logarithmic(true),
-    );
-    ui.add(
-        egui::Slider::new(&mut cfg.air_decel, 10.0..=5000.0)
-            .text("air decel")
-            .logarithmic(true),
+    journey_ui::slider_f32(
+        ui,
+        "Max Fall Speed",
+        &mut cfg.max_fall_speed,
+        50.0..=2000.0,
+        scale,
+        |v| format!("{v:.0}"),
     );
 
-    ui.separator();
-    ui.heading("Jump");
-    ui.add(egui::Slider::new(&mut cfg.jump_power, 100.0..=1500.0).text("jump power"));
-    ui.add(
-        egui::Slider::new(&mut cfg.jump_end_early_gravity_mod, 1.0..=10.0)
-            .text("early release gravity"),
+    ui.add_space(section_gap);
+    journey_ui::divider(ui);
+    ui.label(journey_ui::command_label("Movement", 13.0 * scale));
+    journey_ui::slider_f32(
+        ui,
+        "Move Speed",
+        &mut cfg.movement_speed,
+        50.0..=1200.0,
+        scale,
+        |v| format!("{v:.0}"),
     );
-    ui.add(egui::Slider::new(&mut cfg.coyote_ticks, 0..=20).text("coyote (ticks)"));
-    ui.add(egui::Slider::new(&mut cfg.jump_buffer_ticks, 0..=20).text("jump buffer (ticks)"));
-
-    ui.separator();
-    ui.heading("Dash");
-    ui.add(
-        egui::Slider::new(&mut cfg.dash_speed, 100.0..=3000.0)
-            .text("dash speed")
-            .logarithmic(true),
+    journey_ui::slider_f32_log(
+        ui,
+        "Acceleration",
+        &mut cfg.acceleration,
+        100.0..=20000.0,
+        scale,
+        |v| format!("{v:.0}"),
     );
-    ui.add(egui::Slider::new(&mut cfg.dash_duration_frames, 1..=30).text("dash duration (ticks)"));
-
-    ui.separator();
-    ui.heading("Wall");
-    ui.add(egui::Slider::new(&mut cfg.wall_slide_speed, 5.0..=200.0).text("slide speed"));
-    ui.add(egui::Slider::new(&mut cfg.wall_jump_power_x, 50.0..=800.0).text("jump power X"));
-    ui.add(egui::Slider::new(&mut cfg.wall_jump_power_y, 100.0..=1000.0).text("jump power Y"));
-    ui.add(
-        egui::Slider::new(&mut cfg.wall_grab_timeout_ticks, 5..=120).text("grab timeout (ticks)"),
+    journey_ui::slider_f32_log(
+        ui,
+        "Ground Decel",
+        &mut cfg.ground_decel,
+        100.0..=20000.0,
+        scale,
+        |v| format!("{v:.0}"),
     );
-    ui.add(egui::Slider::new(&mut cfg.wall_jump_lock_ticks, 5..=60).text("jump lock (ticks)"));
-
-    ui.separator();
-    ui.heading("Grapple");
-    ui.add(egui::Slider::new(&mut cfg.grapple_pull_speed, 50.0..=2000.0).text("pull speed"));
-    ui.add(
-        egui::Slider::new(&mut cfg.grapple_slingshot_force, 50.0..=2000.0).text("slingshot force"),
-    );
-    ui.add(
-        egui::Slider::new(&mut cfg.grapple_slingshot_ticks, 1..=30).text("slingshot coast (ticks)"),
-    );
-    ui.add(
-        egui::Slider::new(&mut cfg.grapple_bounce_velocity_x, 100.0..=1500.0).text("bounce vel X"),
-    );
-    ui.add(
-        egui::Slider::new(&mut cfg.grapple_bounce_velocity_y, -1500.0..=0.0).text("bounce vel Y"),
+    journey_ui::slider_f32_log(
+        ui,
+        "Air Decel",
+        &mut cfg.air_decel,
+        10.0..=5000.0,
+        scale,
+        |v| format!("{v:.0}"),
     );
 
-    ui.separator();
-    ui.heading("Knockback");
-    ui.add(egui::Slider::new(&mut cfg.knockback, 100.0..=1500.0).text("knockback force"));
+    ui.add_space(section_gap);
+    journey_ui::divider(ui);
+    ui.label(journey_ui::command_label("Jump", 13.0 * scale));
+    journey_ui::slider_f32(
+        ui,
+        "Jump Power",
+        &mut cfg.jump_power,
+        100.0..=1500.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+    journey_ui::slider_f32(
+        ui,
+        "Early Release Gravity",
+        &mut cfg.jump_end_early_gravity_mod,
+        1.0..=10.0,
+        scale,
+        |v| format!("{v:.2}"),
+    );
+    journey_ui::slider_u16(ui, "Coyote Ticks", &mut cfg.coyote_ticks, 0..=20, scale);
+    journey_ui::slider_u16(
+        ui,
+        "Jump Buffer Ticks",
+        &mut cfg.jump_buffer_ticks,
+        0..=20,
+        scale,
+    );
 
-    ui.separator();
-    ui.heading("Enemy");
-    ui.add(egui::Slider::new(&mut cfg.enemy_patrol_speed, 5.0..=200.0).text("patrol speed"));
-    ui.add(egui::Slider::new(&mut cfg.enemy_aggro_range, 20.0..=400.0).text("aggro range"));
-    ui.add(egui::Slider::new(&mut cfg.enemy_melee_range, 5.0..=100.0).text("melee range"));
+    ui.add_space(section_gap);
+    journey_ui::divider(ui);
+    ui.label(journey_ui::command_label("Dash", 13.0 * scale));
+    journey_ui::slider_f32_log(
+        ui,
+        "Dash Speed",
+        &mut cfg.dash_speed,
+        100.0..=3000.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+    journey_ui::slider_u16(
+        ui,
+        "Dash Duration Ticks",
+        &mut cfg.dash_duration_frames,
+        1..=30,
+        scale,
+    );
 
-    ui.separator();
-    if ui.button("Reset to Defaults").clicked() {
+    ui.add_space(section_gap);
+    journey_ui::divider(ui);
+    ui.label(journey_ui::command_label("Wall", 13.0 * scale));
+    journey_ui::slider_f32(
+        ui,
+        "Slide Speed",
+        &mut cfg.wall_slide_speed,
+        5.0..=200.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+    journey_ui::slider_f32(
+        ui,
+        "Jump Power X",
+        &mut cfg.wall_jump_power_x,
+        50.0..=800.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+    journey_ui::slider_f32(
+        ui,
+        "Jump Power Y",
+        &mut cfg.wall_jump_power_y,
+        100.0..=1000.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+    journey_ui::slider_u16(
+        ui,
+        "Grab Timeout Ticks",
+        &mut cfg.wall_grab_timeout_ticks,
+        5..=120,
+        scale,
+    );
+    journey_ui::slider_u16(
+        ui,
+        "Jump Lock Ticks",
+        &mut cfg.wall_jump_lock_ticks,
+        5..=60,
+        scale,
+    );
+
+    ui.add_space(section_gap);
+    journey_ui::divider(ui);
+    ui.label(journey_ui::command_label("Grapple", 13.0 * scale));
+    journey_ui::slider_f32(
+        ui,
+        "Pull Speed",
+        &mut cfg.grapple_pull_speed,
+        50.0..=2000.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+    journey_ui::slider_f32(
+        ui,
+        "Slingshot Force",
+        &mut cfg.grapple_slingshot_force,
+        50.0..=2000.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+    journey_ui::slider_u16(
+        ui,
+        "Slingshot Coast Ticks",
+        &mut cfg.grapple_slingshot_ticks,
+        1..=30,
+        scale,
+    );
+    journey_ui::slider_f32(
+        ui,
+        "Bounce Vel X",
+        &mut cfg.grapple_bounce_velocity_x,
+        100.0..=1500.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+    journey_ui::slider_f32(
+        ui,
+        "Bounce Vel Y",
+        &mut cfg.grapple_bounce_velocity_y,
+        -1500.0..=0.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+
+    ui.add_space(section_gap);
+    journey_ui::divider(ui);
+    ui.label(journey_ui::command_label("Knockback", 13.0 * scale));
+    journey_ui::slider_f32(
+        ui,
+        "Knockback Force",
+        &mut cfg.knockback,
+        100.0..=1500.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+
+    ui.add_space(section_gap);
+    journey_ui::divider(ui);
+    ui.label(journey_ui::command_label("Enemy", 13.0 * scale));
+    journey_ui::slider_f32(
+        ui,
+        "Patrol Speed",
+        &mut cfg.enemy_patrol_speed,
+        5.0..=200.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+    journey_ui::slider_f32(
+        ui,
+        "Aggro Range",
+        &mut cfg.enemy_aggro_range,
+        20.0..=400.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+    journey_ui::slider_f32(
+        ui,
+        "Melee Range",
+        &mut cfg.enemy_melee_range,
+        5.0..=100.0,
+        scale,
+        |v| format!("{v:.0}"),
+    );
+
+    ui.add_space(section_gap);
+    if ui
+        .add_sized(
+            [ui.available_width().min(220.0), 34.0 * scale],
+            journey_ui::command_button("Reset to Defaults", false, scale),
+        )
+        .clicked()
+    {
         *cfg = PhysicsConfig::default();
     }
 }
 
 pub fn controls_ui(ui: &mut egui::Ui, using_gamepad: bool) {
-    let dim = egui::Color32::from_rgba_unmultiplied(243, 204, 172, 150); //* #F3CCAC
-    let val = egui::Color32::from_rgba_unmultiplied(243, 204, 172, 255);
+    let theme = journey_ui::theme();
+    let dim = theme.muted;
+    let val = theme.text;
 
     let controls: &[(&str, &str)] = if using_gamepad {
         &[
@@ -335,7 +487,7 @@ pub fn controls_ui(ui: &mut egui::Ui, using_gamepad: bool) {
                 "Keyboard & Mouse"
             };
             ui.colored_label(
-                egui::Color32::from_rgba_unmultiplied(243, 204, 172, 255),
+                theme.accent,
                 egui::RichText::new(header).size(16.0).strong(),
             );
             ui.add_space(4.0);

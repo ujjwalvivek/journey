@@ -25,7 +25,7 @@
         "cargo": {
           "buildScripts": {
             "enable": true
-          },
+          }
         },
         "inlayHints": {
           "typeHints": {

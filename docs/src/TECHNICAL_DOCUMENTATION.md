@@ -40,14 +40,14 @@ The project ships as a Cargo workspace with two crates, a reusable `journey-engi
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    game (binary crate)                   │
+│                    game (binary crate)                  │
 │  Player · Enemies · Combat FSM · Levels · Assets · UI   │
 ├─────────────────────────────────────────────────────────┤
-│                  engine (library crate)                  │
-│  GameApp trait · Context · Renderer · Input · Physics    │
+│                  engine (library crate)                 │
+│  GameApp trait · Context · Renderer · Input · Physics   │
 │  Audio · Animation · Camera · Texture · Time · Noise    │
 ├─────────────────────────────────────────────────────────┤
-│              Platform Abstraction Layer                  │
+│              Platform Abstraction Layer                 │
 │  wgpu (GPU) · winit (Windowing) · kira (Audio)          │
 │  gilrs (Gamepad, native-only) · egui (Debug UI)         │
 └─────────────────────────────────────────────────────────┘

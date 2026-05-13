@@ -16,7 +16,9 @@ name = "journey"
 path = "src/main.rs"
 
 [dependencies]
+cadence = { path = "../cadence", package = "journey-sequencer" }
 engine = { path = "../engine", package = "journey-engine" }
+resonance = { path = "../resonance", package = "journey-sound" }
 log = "0.4"
 instant = { version = "0.1", features = ["wasm-bindgen", "inaccurate"] }
 

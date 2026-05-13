@@ -407,11 +407,11 @@ dependencies = [
 
 [[package]]
 name = "journey-sequencer"
-version = "1.2.0"
+version = "1.2.1"
 
 [[package]]
 name = "journey-sound"
-version = "1.2.0"
+version = "1.2.1"
 
 [[package]]
 name = "js-sys"

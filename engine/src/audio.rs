@@ -14,9 +14,10 @@ use kira::AudioManager as KiraManager;
 use kira::AudioManagerSettings;
 use kira::DefaultBackend;
 use kira::Tween;
-use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
+use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings};
 use kira::track::{TrackBuilder, TrackHandle};
 use std::io::Cursor;
+use std::sync::Arc;
 use std::time::Duration;
 
 //? Identifies which sub-track a sound should play on.
@@ -385,6 +386,24 @@ pub fn load_sound_data(bytes: &'static [u8]) -> Option<StaticSoundData> {
             None
         }
     }
+}
+
+pub fn sound_data_from_mono_samples(sample_rate: u32, samples: &[i16]) -> Option<StaticSoundData> {
+    if samples.is_empty() {
+        return None;
+    }
+
+    let frames: Arc<[kira::Frame]> = samples
+        .iter()
+        .map(|sample| kira::Frame::from_mono(*sample as f32 / 32768.0))
+        .collect();
+
+    Some(StaticSoundData {
+        sample_rate,
+        frames,
+        settings: StaticSoundSettings::new(),
+        slice: None,
+    })
 }
 
 //? Extension trait for `egui::Response` that queues UI audio events automatically.

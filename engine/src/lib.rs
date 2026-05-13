@@ -25,7 +25,10 @@ pub mod ui;
 
 //* Re-export commonly used types
 pub use animation::{AnimationDef, AnimationState};
-pub use audio::{AudioManager, AudioResponse, AudioTrack, UiAudioEvent, load_sound_data};
+pub use audio::{
+    AudioManager, AudioResponse, AudioTrack, UiAudioEvent, load_sound_data,
+    sound_data_from_mono_samples,
+};
 pub use camera::ScreenShake;
 pub use context::Context;
 pub use glam::{Vec2, Vec3, Vec4};

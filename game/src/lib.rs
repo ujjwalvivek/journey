@@ -111,7 +111,6 @@ pub struct JourneyGame {
 enum AudioMusicState {
     None,
     StartScreen,
-    LevelEditor,
     InGame,
 }
 
@@ -170,8 +169,8 @@ impl JourneyGame {
             | GameState::Options {
                 return_state: MenuReturnState::StartMenu,
                 ..
-            } => AudioMusicState::StartScreen,
-            GameState::LevelEditor { .. } => AudioMusicState::LevelEditor,
+            }
+            | GameState::LevelEditor { .. } => AudioMusicState::StartScreen,
             GameState::InGame | GameState::Paused | GameState::Options { .. } => {
                 AudioMusicState::InGame
             }
@@ -190,12 +189,6 @@ impl JourneyGame {
                         ctx.audio.play_music(data, 1.0);
                     }
                     ctx.audio.stop_ambience(1.0);
-                }
-                AudioMusicState::LevelEditor => {
-                    if let Some(ref data) = self.audio_assets.ui_level_editor {
-                        ctx.audio.play_music(data, 1.0);
-                    }
-                    ctx.audio.stop_ambience(0.5);
                 }
                 AudioMusicState::InGame => {
                     if let Some(ref data) = self.audio_assets.bg_music {
@@ -221,13 +214,6 @@ impl JourneyGame {
                     ctx.audio.play_music(data, 0.25);
                 }
             }
-            AudioMusicState::LevelEditor => {
-                if !ctx.audio.has_active_music()
-                    && let Some(ref data) = self.audio_assets.ui_level_editor
-                {
-                    ctx.audio.play_music(data, 0.25);
-                }
-            }
             AudioMusicState::InGame => {
                 if !ctx.audio.has_active_music()
                     && let Some(ref data) = self.audio_assets.bg_music
@@ -242,10 +228,13 @@ impl JourneyGame {
             }
         }
 
-        //? Duck/unduck music when the Options menu opens or closes.
-        let options_open = matches!(self.state, GameState::Options { .. });
-        if options_open != self.audio_options_ducked {
-            if options_open {
+        //? Duck/unduck music when the Options menu or level editor opens or closes.
+        let overlay_open = matches!(
+            self.state,
+            GameState::Options { .. } | GameState::LevelEditor { .. }
+        );
+        if overlay_open != self.audio_options_ducked {
+            if overlay_open {
                 let mv = ctx.audio.effective_volume(engine::AudioTrack::Music) * 0.3;
                 let av = ctx.audio.effective_volume(engine::AudioTrack::Ambience) * 0.3;
                 ctx.audio.set_music_live_volume(mv, 0.4);
@@ -256,7 +245,7 @@ impl JourneyGame {
                 ctx.audio.set_music_live_volume(mv, 0.4);
                 ctx.audio.set_ambience_live_volume(av, 0.4);
             }
-            self.audio_options_ducked = options_open;
+            self.audio_options_ducked = overlay_open;
         }
     }
 

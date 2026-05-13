@@ -96,11 +96,7 @@ fn markov_chain_stays_put_on_empty_row() {
 fn sequencer_fires_kick_on_four_on_the_floor() {
     let mut seq = Sequencer::<16>::new(44_100, 120.0, 16, 0xBEEF);
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(4, 16, 0),
-        0,
-        1.0,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(4, 16, 0), 0, 1.0));
 
     let mut kick_events = 0u32;
     let mut steps_seen = 0u32;
@@ -119,15 +115,16 @@ fn sequencer_fires_kick_on_four_on_the_floor() {
         }
     }
 
-    assert_eq!(kick_events, 4, "E(4,16) should fire exactly 4 kicks per cycle");
+    assert_eq!(
+        kick_events, 4,
+        "E(4,16) should fire exactly 4 kicks per cycle"
+    );
     assert_eq!(steps_seen, 16, "Should have seen all 16 steps");
 }
 
 #[test]
 fn sequencer_melodic_track_stays_in_scale() {
-    let scale: [f32; 8] = [
-        220.0, 261.63, 293.66, 329.63, 392.00, 440.0, 523.25, 587.33,
-    ];
+    let scale: [f32; 8] = [220.0, 261.63, 293.66, 329.63, 392.00, 440.0, 523.25, 587.33];
 
     let matrix = [
         [0, 40, 10, 5, 0, 0, 0, 5],
@@ -179,9 +176,7 @@ fn sequencer_is_deterministic() {
     let mut seq_a = Sequencer::<16>::new(44_100, 120.0, 16, 0xCAFE);
     let mut seq_b = Sequencer::<16>::new(44_100, 120.0, 16, 0xCAFE);
 
-    let scale: [f32; 8] = [
-        220.0, 261.63, 293.66, 329.63, 392.00, 440.0, 523.25, 587.33,
-    ];
+    let scale: [f32; 8] = [220.0, 261.63, 293.66, 329.63, 392.00, 440.0, 523.25, 587.33];
     let matrix = [[10; 8]; 8];
 
     let track = Track::melody(
@@ -207,11 +202,7 @@ fn sequencer_is_deterministic() {
 fn sequencer_mute_suppresses_events() {
     let mut seq = Sequencer::<16>::new(44_100, 120.0, 16, 0xDEAD);
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(4, 16, 0),
-        0,
-        1.0,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(4, 16, 0), 0, 1.0));
 
     seq.mute(0);
     assert!(!seq.is_track_active(0));
@@ -257,11 +248,7 @@ fn sequencer_mute_suppresses_events() {
 fn sequencer_bpm_change_maintains_continuity() {
     let mut seq = Sequencer::<16>::new(44_100, 120.0, 16, 0xFACE);
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(4, 16, 0),
-        0,
-        1.0,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(4, 16, 0), 0, 1.0));
 
     let mut steps_before = 0u32;
     for _ in 0..44_100 {

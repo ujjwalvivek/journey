@@ -1,7 +1,7 @@
 use crate::euclid::EuclideanPattern;
 use crate::markov::MarkovChain;
 use crate::sequencer::Sequencer;
-use crate::track::{Track, MAX_NOTES};
+use crate::track::{MAX_NOTES, Track};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scene {
@@ -52,25 +52,25 @@ const BASS_NOTES: [f32; MAX_NOTES] = [
 ];
 
 const MELODY_MATRIX: [[u8; MAX_NOTES]; MAX_NOTES] = [
-    [0, 40, 10,  5,  0,  0,  0,  5],  // A3 → mostly C4
-    [20, 0, 35, 10,  5,  0,  0,  0],  // C4 → mostly D4
-    [5, 20,  0, 35, 10,  0,  0,  0],  // D4 → mostly E4
-    [5,  5, 20,  0, 30, 10,  0,  0],  // E4 → mostly G4
-    [0,  5,  5, 20,  0, 35, 10,  0],  // G4 → mostly A4
-    [0,  0,  5,  5, 20,  0, 35, 10],  // A4 → mostly C5
-    [5,  0,  0,  5,  5, 25,  0, 30],  // C5 → mostly D5
-    [10, 5,  0,  0,  5, 10, 30,  0],  // D5 → wraps back down
+    [0, 40, 10, 5, 0, 0, 0, 5],  // A3 → mostly C4
+    [20, 0, 35, 10, 5, 0, 0, 0], // C4 → mostly D4
+    [5, 20, 0, 35, 10, 0, 0, 0], // D4 → mostly E4
+    [5, 5, 20, 0, 30, 10, 0, 0], // E4 → mostly G4
+    [0, 5, 5, 20, 0, 35, 10, 0], // G4 → mostly A4
+    [0, 0, 5, 5, 20, 0, 35, 10], // A4 → mostly C5
+    [5, 0, 0, 5, 5, 25, 0, 30],  // C5 → mostly D5
+    [10, 5, 0, 0, 5, 10, 30, 0], // D5 → wraps back down
 ];
 
 const BASS_MATRIX: [[u8; MAX_NOTES]; MAX_NOTES] = [
-    [0, 30, 10,  5, 20,  5,  0,  0],  // A1 → mostly C2, some G2
-    [25, 0, 30, 10,  5,  0,  0,  0],  // C2 → A1 or D2
-    [5, 20,  0, 35, 10,  0,  0,  0],  // D2 → mostly E2
-    [10, 5, 20,  0, 30,  5,  0,  0],  // E2 → mostly G2
-    [15, 5,  5, 15,  0, 25,  5,  0],  // G2 → A2 or back to A1
-    [20, 0,  5,  5, 20,  0, 20,  0],  // A2 → root motion
-    [5, 15,  0,  0, 10, 25,  0, 15],  // C3 → mostly A2
-    [10, 5, 15,  0,  5, 10, 25,  0],  // D3 → mostly C3
+    [0, 30, 10, 5, 20, 5, 0, 0],  // A1 → mostly C2, some G2
+    [25, 0, 30, 10, 5, 0, 0, 0],  // C2 → A1 or D2
+    [5, 20, 0, 35, 10, 0, 0, 0],  // D2 → mostly E2
+    [10, 5, 20, 0, 30, 5, 0, 0],  // E2 → mostly G2
+    [15, 5, 5, 15, 0, 25, 5, 0],  // G2 → A2 or back to A1
+    [20, 0, 5, 5, 20, 0, 20, 0],  // A2 → root motion
+    [5, 15, 0, 0, 10, 25, 0, 15], // C3 → mostly A2
+    [10, 5, 15, 0, 5, 10, 25, 0], // D3 → mostly C3
 ];
 
 pub fn drums<const S: usize>(sample_rate: u32, bpm: f32, seed: u16) -> Sequencer<S> {
@@ -78,29 +78,13 @@ pub fn drums<const S: usize>(sample_rate: u32, bpm: f32, seed: u16) -> Sequencer
 
     let mut seq = Sequencer::<S>::new(sample_rate, bpm, 16, seed);
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(4, 16, 0),
-        0,
-        0.95,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(4, 16, 0), 0, 0.95));
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(2, 16, 4),
-        1,
-        0.80,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(2, 16, 4), 1, 0.80));
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(8, 16, 0),
-        2,
-        0.55,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(8, 16, 0), 2, 0.55));
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(3, 16, 2),
-        2,
-        0.40,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(3, 16, 2), 2, 0.40));
 
     seq
 }
@@ -118,17 +102,9 @@ pub fn melodic<const S: usize>(sample_rate: u32, bpm: f32, seed: u16) -> Sequenc
         0.70,
     ));
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(2, 16, 0),
-        0,
-        0.60,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(2, 16, 0), 0, 0.60));
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(4, 16, 0),
-        2,
-        0.35,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(4, 16, 0), 2, 0.35));
 
     seq
 }
@@ -138,23 +114,11 @@ pub fn full<const S: usize>(sample_rate: u32, bpm: f32, seed: u16) -> Sequencer<
 
     let mut seq = Sequencer::<S>::new(sample_rate, bpm, 16, seed);
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(4, 16, 0),
-        0,
-        0.90,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(4, 16, 0), 0, 0.90));
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(2, 16, 4),
-        1,
-        0.75,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(2, 16, 4), 1, 0.75));
 
-    seq.add_track(Track::percussion(
-        EuclideanPattern::new(8, 16, 0),
-        2,
-        0.45,
-    ));
+    seq.add_track(Track::percussion(EuclideanPattern::new(8, 16, 0), 2, 0.45));
 
     seq.add_track(Track::melody(
         EuclideanPattern::new(3, 8, 0),

@@ -76,7 +76,11 @@ impl<const STEPS: usize> Track<STEPS> {
                 note_count,
             } => {
                 let state = chain.next(random_seed);
-                let clamped = if *note_count == 0 { 0 } else { state % *note_count };
+                let clamped = if *note_count == 0 {
+                    0
+                } else {
+                    state % *note_count
+                };
                 Some(TrackEvent::TriggerNote {
                     frequency: frequencies[clamped],
                     gain: self.gain,

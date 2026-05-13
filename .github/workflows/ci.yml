@@ -1,6 +1,7 @@
-name: Deploy Website & Docs
+name: CI
 
 on:
+  pull_request:
   push:
     branches:
       - main
@@ -9,16 +10,18 @@ on:
 
 permissions:
   contents: read
-  deployments: write
 
 concurrency:
-  group: deploy-main
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  deploy:
+  check:
+    name: Check, Test, and Build
     runs-on: ubuntu-latest
-    name: Build & Deploy to Cloudflare Pages
 
     steps:
       - name: Checkout Repo
@@ -29,13 +32,14 @@ jobs:
         with:
           go-version-file: tools/versioning/go.mod
 
-      - name: Check Version Sync
-        run: go -C tools/versioning run . -check
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - name: Install Linux Dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
 
       - name: Install wasm-pack
         uses: jetli/wasm-pack-action@v0.4.0
@@ -47,11 +51,32 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
-      - name: Install Dependencies
+      - name: Install Web Dependencies
         working-directory: ./web
         run: npm ci
 
-      - name: Build Project
+      - name: Check Version Sync
+        run: go -C tools/versioning run . -check
+
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint Rust
+        run: cargo clippy -p journey-engine -p journey-game -p journey-sound -p journey-sequencer -- -D warnings
+
+      - name: Test Rust Workspace
+        run: cargo test --workspace
+
+      - name: Check Game WASM
+        run: cargo check -p journey-game --target wasm32-unknown-unknown
+
+      - name: Package Rust Crates
+        run: |
+          cargo package -p journey-sound
+          cargo package -p journey-sequencer
+          cargo package -p journey-engine
+
+      - name: Build Web
         working-directory: ./web
         run: npm run build
 
@@ -62,23 +87,3 @@ jobs:
 
       - name: Build Documentation
         run: mdbook build docs
-
-      - name: Deploy Game to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '3.90.0'
-          command: pages deploy web/dist --project-name=journey --branch=main
-        env:
-          WRANGLER_LOG: info
-
-      - name: Deploy Docs to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '3.90.0'
-          command: pages deploy docs/book --project-name=journey-docs --branch=main
-        env:
-          WRANGLER_LOG: info

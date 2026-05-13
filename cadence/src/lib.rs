@@ -16,5 +16,5 @@ pub use euclid::EuclideanPattern;
 pub use markov::MarkovChain;
 pub use random::Lfsr;
 pub use scene::Scene;
-pub use sequencer::{Sequencer, SequencerOutput, MAX_TRACKS};
+pub use sequencer::{MAX_TRACKS, Sequencer, SequencerOutput};
 pub use track::{Track, TrackAction, TrackEvent};

@@ -73,7 +73,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          registry-url: 'https://npm.pkg.github.com'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Build Wasm Package
         working-directory: ./game
@@ -83,17 +83,14 @@ jobs:
         working-directory: ./game/pkg
         run: npm pkg set name="@ujjwalvivek/journey-engine" && npm pkg set version="${GITHUB_REF#refs/tags/v}"
 
-      - name: Upgrade NPM for OIDC support
-        run: npm install -g npm@latest
-
       - name: Publish to NPM
         working-directory: ./game/pkg
-        run: npm publish --provenance --access public
+        run: npm publish --access public
 
       - name: Setup Node.js for GitHub Packages
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://npm.pkg.github.com'
 
       - name: Publish to GitHub Packages

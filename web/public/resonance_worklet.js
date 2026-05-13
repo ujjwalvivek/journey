@@ -4,6 +4,7 @@ class ResonanceProcessor extends AudioWorkletProcessor {
     this.exports = null;
     this.ready = false;
     this.reportCountdown = 0;
+    this.cadenceActive = false;
     this.params = {
       frequency: 440,
       waveform: 0,
@@ -43,6 +44,7 @@ class ResonanceProcessor extends AudioWorkletProcessor {
       this.exports = module.instance.exports;
       this.exports.__wbindgen_start();
       this.exports.resonance_init(Math.round(message.sampleRate || sampleRate));
+      this.exports.cadence_init(Math.round(message.sampleRate || sampleRate), 120.0, 0);
       this.applyParams(this.params);
       this.ready = true;
       this.port.postMessage({ type: "ready" });
@@ -67,6 +69,13 @@ class ResonanceProcessor extends AudioWorkletProcessor {
       this.exports.resonance_note_off();
     } else if (message.type === "trigger-patch") {
       this.exports.resonance_trigger_patch(message.patch);
+    } else if (message.type === "cadence-active") {
+      this.cadenceActive = !!message.active;
+      this.exports.cadence_set_active(this.cadenceActive);
+    } else if (message.type === "cadence-bpm") {
+      this.exports.cadence_set_bpm(message.bpm);
+    } else if (message.type === "cadence-scene") {
+      this.exports.cadence_set_scene(message.scene);
     }
   }
 
@@ -87,7 +96,13 @@ class ResonanceProcessor extends AudioWorkletProcessor {
     let peak = 0;
 
     for (let i = 0; i < frames; i += 1) {
-      const sample = this.ready ? this.exports.resonance_next_sample() : 0;
+      let sample = this.ready ? this.exports.resonance_next_sample() : 0;
+
+      if (this.ready && this.cadenceActive) {
+        sample += this.exports.cadence_next_sample();
+        sample = Math.max(-1, Math.min(1, sample));
+      }
+
       const abs = Math.abs(sample);
       if (abs > peak) {
         peak = abs;
@@ -101,7 +116,16 @@ class ResonanceProcessor extends AudioWorkletProcessor {
     this.reportCountdown -= 1;
     if (this.ready && this.reportCountdown <= 0) {
       this.reportCountdown = 12;
-      this.port.postMessage({ type: "meter", peak, stage: this.exports.resonance_stage() });
+      const step = this.cadenceActive ? this.exports.cadence_current_step() : 0;
+      const bpm = this.cadenceActive ? this.exports.cadence_bpm() : 0;
+      this.port.postMessage({
+        type: "meter",
+        peak,
+        stage: this.exports.resonance_stage(),
+        cadenceStep: step,
+        cadenceBpm: bpm,
+        cadenceActive: this.cadenceActive,
+      });
     }
 
     return true;

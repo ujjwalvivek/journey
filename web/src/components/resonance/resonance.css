@@ -10,13 +10,14 @@
     --res-green: #f6f6f4;
     position: fixed;
     top: 50%;
-    right: 32px;
+    right: calc(50% + 8px);
     z-index: 9000;
-    width: min(800px, calc(100vw - 380px));
+    width: min(460px, calc(50vw - 48px));
     max-height: calc(100vh - 64px);
     overflow: auto;
     transform: translateY(-50%);
-    border: 1px solid var(--res-text);
+    border: 1px solid var(--res-cyan);
+    box-shadow: 0 0 20px rgba(94, 242, 255, 0.15), inset 0 0 10px rgba(94, 242, 255, 0.05);
     background: var(--res-panel);
     color: var(--res-text);
     font-family: "Monaspace Neon", monospace;
@@ -126,7 +127,7 @@
     display: block;
     width: 100%;
     aspect-ratio: 48 / 13;
-    min-height: 180px;
+    min-height: 140px;
     margin: 0;
     border-top: 1px solid var(--res-line);
     border-bottom: 1px solid var(--res-line);
@@ -233,7 +234,7 @@
 }
 
 .resonance-patch-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .resonance-waveforms button,

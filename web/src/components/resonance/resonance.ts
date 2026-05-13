@@ -1,4 +1,4 @@
-import resonanceWasmUrl from "../../../../tools/audio/pkg/resonance_wasm_bg.wasm?url";
+import { ensureAudio as ensureSharedAudio } from "../shared-audio";
 import "./resonance.css";
 
 const WAVEFORMS = ["Sine", "Square", "Saw", "Triangle", "Noise"] as const;
@@ -14,9 +14,6 @@ const PATCHES = [
 type ResonanceState = {
     context: AudioContext | null;
     node: AudioWorkletNode | null;
-    readyPromise: Promise<void> | null;
-    resolveReady: (() => void) | null;
-    rejectReady: ((error: Error) => void) | null;
     ready: boolean;
     running: boolean;
     waveform: number;
@@ -211,9 +208,6 @@ function createState(): ResonanceState {
     return {
         context: null,
         node: null,
-        readyPromise: null,
-        resolveReady: null,
-        rejectReady: null,
         ready: false,
         running: false,
         waveform: 0,
@@ -284,79 +278,25 @@ function params(controls: ResonanceControls, state: ResonanceState) {
 
 async function ensureAudio(controls: ResonanceControls, state: ResonanceState) {
     if (state.context && state.node) {
-        if (state.readyPromise) {
-            await state.readyPromise;
-        }
         return { context: state.context, node: state.node };
     }
 
-    const webkitWindow = window as Window & { webkitAudioContext?: typeof AudioContext };
-    const AudioContextType = window.AudioContext ?? webkitWindow.webkitAudioContext;
-    if (!AudioContextType) {
-        throw new Error("Web Audio is not available");
-    }
-
-    const context = new AudioContextType();
+    setStatus(controls, "Loading audio engine...");
+    const { context, node } = await ensureSharedAudio();
     state.context = context;
-    setStatus(controls, "Loading audio worklet");
-    await context.audioWorklet.addModule("/resonance_worklet.js?v=2");
-
-    const node = new AudioWorkletNode(context, "resonance-processor", {
-        numberOfInputs: 0,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-    });
     state.node = node;
+    state.ready = true;
 
-    state.readyPromise = new Promise((resolve, reject) => {
-        state.resolveReady = resolve;
-        state.rejectReady = reject;
+    node.port.start();
+    node.port.addEventListener("message", (event: MessageEvent) => {
+        const message = event.data as { type?: string; peak?: number };
+        if (message.type === "meter") {
+            state.peak = Number(message.peak ?? 0);
+        }
     });
 
-    node.onprocessorerror = () => {
-        const error = new Error("Audio processor crashed");
-        setStatus(controls, error.message, true);
-        state.rejectReady?.(error);
-    };
-
-    node.port.onmessage = (event: MessageEvent) => {
-        const message = event.data as { type?: string; peak?: number; message?: string };
-        if (message.type === "ready") {
-            state.ready = true;
-            setStatus(controls, "Audio engine ready");
-            sendParams(controls, state);
-            if (state.running) {
-                node.port.postMessage({ type: "note-on" });
-            }
-            state.resolveReady?.();
-        } else if (message.type === "meter") {
-            state.peak = Number(message.peak ?? 0);
-        } else if (message.type === "error") {
-            const error = new Error(message.message || "Audio worklet error");
-            setStatus(controls, error.message, true);
-            state.rejectReady?.(error);
-        }
-    };
-
-    node.connect(context.destination);
-    const response = await fetch(resonanceWasmUrl);
-    if (!response.ok) {
-        throw new Error(`Failed to load WASM: ${response.status}`);
-    }
-    const wasmBytes = await response.arrayBuffer();
-    setStatus(controls, "Loading WASM synth");
-    node.port.postMessage(
-        {
-            type: "init",
-            wasmBytes,
-            sampleRate: context.sampleRate,
-        },
-        [wasmBytes],
-    );
-
-    if (state.readyPromise) {
-        await state.readyPromise;
-    }
+    setStatus(controls, "Audio engine ready");
+    sendParams(controls, state);
     return { context, node };
 }
 

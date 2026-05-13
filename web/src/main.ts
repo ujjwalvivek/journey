@@ -1,4 +1,5 @@
 import { setupResonancePanel } from "./components/resonance/resonance.ts";
+import { setupCadencePanel } from "./components/cadence/cadence.ts";
 
 type GameInit = () => Promise<unknown>;
 
@@ -57,6 +58,7 @@ async function run() {
 
         await firstFrameReady;
         setupResonancePanel();
+        setupCadencePanel();
 
         if (bootFill) {
             bootFill.style.transition = "none";

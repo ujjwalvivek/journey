@@ -1,0 +1,209 @@
+#cadence-panel {
+    --cad-panel: #050506;
+    --cad-panel-2: #111113;
+    --cad-line: #2a2a2d;
+    --cad-text: #f6f6f4;
+    --cad-muted: #969694;
+    --cad-magenta: #d97cff;
+    position: fixed;
+    top: 50%;
+    left: calc(50% + 8px);
+    z-index: 9000;
+    width: min(460px, calc(50vw - 48px));
+    max-height: calc(100vh - 64px);
+    overflow: auto;
+    transform: translateY(-50%);
+    border: 1px solid var(--cad-magenta);
+    box-shadow: 0 0 20px rgba(217, 124, 255, 0.15), inset 0 0 10px rgba(217, 124, 255, 0.05);
+    background: var(--cad-panel);
+    color: var(--cad-text);
+    font-family: "Monaspace Neon", monospace;
+    letter-spacing: 0;
+}
+
+#cadence-panel,
+#cadence-panel * {
+    box-sizing: border-box;
+    border-radius: 0;
+}
+
+#cadence-panel[hidden] {
+    display: none;
+}
+
+.cadence-topbar {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    border-bottom: 1px solid var(--cad-line);
+    padding: 16px;
+    gap: 12px;
+}
+
+.cadence-eyebrow {
+    margin: 0 0 4px;
+    color: var(--cad-magenta);
+    font-size: 0.75rem;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.cadence-status {
+    min-height: 20px;
+    margin: 0;
+    color: var(--cad-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    font-weight: 500;
+}
+
+#cadence-panel button {
+    font: inherit;
+    letter-spacing: inherit;
+    border: 1px solid var(--cad-line);
+    color: var(--cad-text);
+    background: var(--cad-panel-2);
+    cursor: pointer;
+    text-transform: uppercase;
+    font-weight: 700;
+    font-size: 0.75rem;
+    transition: background-color 100ms linear, color 100ms linear;
+}
+
+#cadence-panel button:hover {
+    background: var(--cad-text);
+    color: var(--cad-panel);
+}
+
+#cadence-panel button:focus-visible {
+    outline: 2px solid var(--cad-text);
+    outline-offset: -4px;
+}
+
+.cadence-power {
+    min-width: 96px;
+    height: 40px;
+}
+
+.cadence-power.running {
+    background: var(--cad-magenta);
+    border-color: var(--cad-magenta);
+    color: var(--cad-panel);
+}
+
+.cadence-close {
+    width: 40px;
+    height: 40px;
+}
+
+.cadence-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid var(--cad-line);
+}
+
+.cadence-section {
+    padding: 12px;
+    border-right: 1px solid var(--cad-line);
+}
+
+.cadence-section:last-child {
+    border-right: none;
+}
+
+.cadence-section-label {
+    color: var(--cad-muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.cadence-bpm-display {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--cad-text);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 8px;
+}
+
+.cadence-bpm-controls {
+    display: flex;
+    gap: 4px;
+}
+
+.cadence-bpm-controls button {
+    flex: 1;
+    height: 32px;
+    font-size: 0.75rem;
+}
+
+.cadence-scenes {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 4px;
+}
+
+.cadence-scenes button {
+    height: 32px;
+    text-align: left;
+    padding: 0 12px;
+}
+
+.cadence-scenes button.active {
+    background: var(--cad-magenta);
+    border-color: var(--cad-magenta);
+    color: var(--cad-panel);
+}
+
+.cadence-grid-wrap {
+    padding: 12px;
+}
+
+.cadence-grid-label {
+    color: var(--cad-muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.cadence-step-grid {
+    display: grid;
+    grid-template-columns: repeat(16, 1fr);
+    gap: 2px;
+}
+
+.cadence-step {
+    aspect-ratio: 1;
+    background: var(--cad-panel-2);
+    border: 1px solid var(--cad-line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    color: var(--cad-muted);
+    font-variant-numeric: tabular-nums;
+    transition: background-color 60ms linear;
+}
+
+.cadence-step.active {
+    background: var(--cad-magenta);
+    border-color: var(--cad-magenta);
+    color: var(--cad-panel);
+    font-weight: 700;
+}
+
+@media (max-width: 980px) {
+    #cadence-panel {
+        left: 16px;
+        right: 16px;
+        width: auto;
+    }
+
+    .cadence-controls {
+        grid-template-columns: 1fr;
+    }
+}

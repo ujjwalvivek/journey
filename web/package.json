@@ -18,7 +18,7 @@
     "typescript": "~5.9.3",
     "vite": "8.0.5",
     "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.5.0",
+    "vite-plugin-wasm": "^3.6.0",
     "wasm-pack": "^0.14.0"
   }
 }

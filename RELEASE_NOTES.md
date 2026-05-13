@@ -1,4 +1,4 @@
-## Journey Engine v1.2.1 - Release Notes
+## Journey Engine v1.2.2 - Release Notes
 
 Focus on audio generation and WASM size.
 

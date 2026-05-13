@@ -1,9 +1,9 @@
-use resonance::buffer::{mix, PcmBuffer};
+use resonance::buffer::{PcmBuffer, mix};
 use resonance::envelope::{Adsr, AdsrState, Stage};
 use resonance::lut::{SINE_LUT, TABLE_SIZE};
 use resonance::oscillator;
 use resonance::patch::{Patch, PatchVoice};
-use resonance::sound::{Curve, FilterMode, Layer, SoundSpec, SoundVoice, Waveform, MAX_LAYERS};
+use resonance::sound::{Curve, FilterMode, Layer, MAX_LAYERS, SoundSpec, SoundVoice, Waveform};
 
 const SAMPLE_RATE: u32 = 44100;
 
@@ -50,15 +50,15 @@ fn sine_periodicity() {
 
     //* Record first cycle
     let mut first_cycle = [0i16; 441];
-    for i in 0..441 {
-        first_cycle[i] = oscillator::sine(phase);
+    for sample in first_cycle.iter_mut() {
+        *sample = oscillator::sine(phase);
         phase = phase.wrapping_add(inc);
     }
 
     //* Record second cycle
     let mut second_cycle = [0i16; 441];
-    for i in 0..441 {
-        second_cycle[i] = oscillator::sine(phase);
+    for sample in second_cycle.iter_mut() {
+        *sample = oscillator::sine(phase);
         phase = phase.wrapping_add(inc);
     }
 
@@ -119,8 +119,8 @@ fn square_band_limited_not_all_zeros() {
 fn noise_is_nonzero_and_varying() {
     let mut noise = oscillator::Noise::new();
     let mut samples = [0i16; 100];
-    for i in 0..100 {
-        samples[i] = noise.next_sample();
+    for sample in samples.iter_mut() {
+        *sample = noise.next_sample();
     }
 
     //* Should have non-zero values

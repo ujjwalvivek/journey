@@ -26,8 +26,8 @@ Add `journey-engine` to your `Cargo.toml`:
 ```toml
 [dependencies]
 journey-engine = "1.2.0"
-journey-audio = "1.2.0"
-journey-synthesizer = "1.2.0"
+journey-sound = "1.2.0"
+journey-sequencer = "1.2.0"
 ```
 
 Implement the `GameApp` trait:

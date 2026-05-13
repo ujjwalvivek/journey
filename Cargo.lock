@@ -1374,10 +1374,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "journey-audio"
-version = "1.2.0"
-
-[[package]]
 name = "journey-engine"
 version = "1.2.0"
 dependencies = [
@@ -1418,7 +1414,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "journey-synthesizer"
+name = "journey-sequencer"
+version = "1.2.0"
+
+[[package]]
+name = "journey-sound"
 version = "1.2.0"
 
 [[package]]

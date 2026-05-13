@@ -59,7 +59,7 @@ cd tools/versioning && go test ./... -count=1
 
 ```bash
 # Run the terminal synthesizer natively
-cargo run -p journey-audio
+cargo run -p journey-sound
 ```
 
 ## Dependencies

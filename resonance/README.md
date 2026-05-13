@@ -4,7 +4,7 @@ A zero-dependency, `no_std` DSP audio synthesis primitive in Rust.
 
 Resonance generates sound directly from CPU math with zero heap allocations, zero external dependencies, and zero reliance on floating-point trigonometry at runtime.
 
-[![Crates.io](https://img.shields.io/crates/v/journey-audio.svg?style=for-the-badge&logo=rust&logoColor=white&label=crate)](https://crates.io/crates/journey-audio)
+[![Crates.io](https://img.shields.io/crates/v/journey-sound.svg?style=for-the-badge&logo=rust&logoColor=white&label=crate)](https://crates.io/crates/journey-sound)
 [![Docs](https://img.shields.io/badge/docs-journey.ujjwalvivek.com-blue?style=for-the-badge&logo=rust&logoColor=white&label=docs)](https://docs.journey.ujjwalvivek.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge&logo=github&logoColor=white&label=license)](LICENSE)
 

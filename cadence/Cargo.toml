@@ -1,5 +1,5 @@
 [package]
-name = "journey-synthesizer"
+name = "journey-sequencer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

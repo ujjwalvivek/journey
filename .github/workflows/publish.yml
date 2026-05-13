@@ -178,13 +178,13 @@ jobs:
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
-      - name: Publish journey-audio to crates.io
-        run: cargo publish -p journey-audio --no-verify
+      - name: Publish journey-sound to crates.io
+        run: cargo publish -p journey-sound --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-      - name: Publish journey-synthesizer to crates.io
-        run: cargo publish -p journey-synthesizer --no-verify
+      - name: Publish journey-sequencer to crates.io
+        run: cargo publish -p journey-sequencer --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 

@@ -6,7 +6,7 @@ Cadence does not synthesize audio or parse MIDI files. It is a `no_std` state ma
 
 It is designed to sit directly on top of audio synthesis primitives like [Resonance](../resonance).
 
-[![Crates.io](https://img.shields.io/crates/v/journey-synthesizer.svg?style=for-the-badge&logo=rust&logoColor=white&label=crate)](https://crates.io/crates/journey-synthesizer)
+[![Crates.io](https://img.shields.io/crates/v/journey-sequencer.svg?style=for-the-badge&logo=rust&logoColor=white&label=crate)](https://crates.io/crates/journey-sequencer)
 [![Docs](https://img.shields.io/badge/docs-journey.ujjwalvivek.com-blue?style=for-the-badge&logo=rust&logoColor=white&label=docs)](https://docs.journey.ujjwalvivek.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge&logo=github&logoColor=white&label=license)](LICENSE)
 

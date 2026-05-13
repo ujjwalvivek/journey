@@ -14,8 +14,8 @@ A custom 2D game engine built with Rust and wGPU, designed for tight, expressive
 
 - **Play** → [journey.ujjwalvivek.com](https://journey.ujjwalvivek.com)
 - **Engine Crate** → [crates.io/crates/journey-engine](https://crates.io/crates/journey-engine)
-- **Audio Crate** → [crates.io/crates/journey-audio](https://crates.io/crates/journey-audio)
-- **Synth Crate** → [crates.io/crates/journey-synthesizer](https://crates.io/crates/journey-synthesizer)
+- **Audio Crate** → [crates.io/crates/journey-sound](https://crates.io/crates/journey-sound)
+- **Synth Crate** → [crates.io/crates/journey-sequencer](https://crates.io/crates/journey-sequencer)
 - **Source** → [github.com/ujjwalvivek/journey](https://github.com/ujjwalvivek/journey)
 
 ## At a Glance
@@ -23,8 +23,8 @@ A custom 2D game engine built with Rust and wGPU, designed for tight, expressive
 ```toml
 [dependencies]
 journey-engine = "1.2.0"
-journey-audio = "1.2.0"
-journey-synthesizer = "1.2.0"
+journey-sound = "1.0.0"
+journey-sequencer = "1.0.0"
 ```
 
 ```rust

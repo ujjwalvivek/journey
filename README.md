@@ -84,8 +84,8 @@ Journey/
 ├── engine/             //* The reusable library (journey-engine on crates.io)
 │   ├── src/lib.rs      //* Public API surface, GameApp trait, re-exports
 │   └── Cargo.toml      //* Dependencies: wgpu, winit, kira, egui, glam, bytemuck
-├── resonance/          //* The custom no_std DSP primitive (journey-audio)
-├── cadence/            //* The procedural audio sequencer (journey-synthesizer)
+├── resonance/          //* The custom no_std DSP primitive (journey-sound)
+├── cadence/            //* The procedural audio sequencer (journey-sequencer)
 ├── game/               //* The executable (Content)
 │    ├── pkg/           //* WASM Artifacts (Generated here)
 │    ├── src/main.rs    //* Native entry point

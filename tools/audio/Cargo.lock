@@ -406,12 +406,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "journey-audio"
-version = "1.1.2"
+name = "journey-sequencer"
+version = "1.2.0"
 
 [[package]]
-name = "journey-synthesizer"
-version = "1.1.2"
+name = "journey-sound"
+version = "1.2.0"
 
 [[package]]
 name = "js-sys"
@@ -758,8 +758,8 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "crossterm",
- "journey-audio",
- "journey-synthesizer",
+ "journey-sequencer",
+ "journey-sound",
  "ratatui",
  "wasm-bindgen",
 ]

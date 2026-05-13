@@ -1,0 +1,14 @@
+[package]
+name = "journey-synthesizer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[lib]
+name = "cadence"
+crate-type = ["rlib"]
+
+[dependencies]

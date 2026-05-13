@@ -12,6 +12,9 @@ fn open_resonance_panel() {
         if let Ok(event) = web_sys::Event::new("journey:open-resonance") {
             let _ = web_window.dispatch_event(&event);
         }
+        if let Ok(event) = web_sys::Event::new("journey:open-cadence") {
+            let _ = web_window.dispatch_event(&event);
+        }
     }
 }
 
@@ -224,7 +227,7 @@ impl JourneyGame {
                                     let r = ui
                                         .add_sized(
                                             [btn_w, btn_h],
-                                            menu_btn("Resonance", self.menu_index == idx),
+                                            menu_btn("Synthesizer", self.menu_index == idx),
                                         )
                                         .with_ui_sound(&mut engine_ctx.pending_ui_audio);
                                     if r.clicked() || (self.menu_index == idx && confirmed) {

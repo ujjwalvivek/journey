@@ -410,6 +410,10 @@ name = "journey-audio"
 version = "1.1.2"
 
 [[package]]
+name = "journey-synthesizer"
+version = "1.1.2"
+
+[[package]]
 name = "js-sys"
 version = "0.3.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -755,6 +759,7 @@ dependencies = [
  "cpal",
  "crossterm",
  "journey-audio",
+ "journey-synthesizer",
  "ratatui",
  "wasm-bindgen",
 ]

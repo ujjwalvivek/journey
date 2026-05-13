@@ -1,6 +1,9 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod cli;
 
+#[cfg(not(target_arch = "wasm32"))]
+mod seq_engine;
+
 #[cfg(target_arch = "wasm32")]
 mod web;
 

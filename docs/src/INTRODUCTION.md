@@ -8,18 +8,23 @@ A custom 2D game engine built with Rust and wGPU, designed for tight, expressive
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | [Engine API](ENGINE_API.md)                           | Public API reference with usage examples: `GameApp`, `Context`, input, physics, sprites, audio, animation |
 | [Technical Documentation](TECHNICAL_DOCUMENTATION.md) | Architecture internals, game loop model, rendering pipeline, cross-platform strategy, dependency map      |
+| [Procedural Audio](AUDIO.md)                          | Guides and examples for using the custom Resonance (`no_std` DSP) and Cadence (Sequencer) audio stack     |
 
 ## Quick Links
 
 - **Play** → [journey.ujjwalvivek.com](https://journey.ujjwalvivek.com)
-- **Crate** → [crates.io/crates/journey-engine](https://crates.io/crates/journey-engine)
+- **Engine Crate** → [crates.io/crates/journey-engine](https://crates.io/crates/journey-engine)
+- **Audio Crate** → [crates.io/crates/journey-audio](https://crates.io/crates/journey-audio)
+- **Synth Crate** → [crates.io/crates/journey-synthesizer](https://crates.io/crates/journey-synthesizer)
 - **Source** → [github.com/ujjwalvivek/journey](https://github.com/ujjwalvivek/journey)
 
 ## At a Glance
 
 ```toml
 [dependencies]
-journey-engine = "1.0.0"
+journey-engine = "1.2.0"
+journey-audio = "1.2.0"
+journey-synthesizer = "1.2.0"
 ```
 
 ```rust

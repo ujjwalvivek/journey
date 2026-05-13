@@ -9,3 +9,4 @@
 # Architecture
 
 - [Technical Documentation](TECHNICAL_DOCUMENTATION.md)
+- [Procedural Audio](AUDIO.md)

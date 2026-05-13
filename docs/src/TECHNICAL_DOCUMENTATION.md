@@ -348,7 +348,11 @@ Both movement and combat inputs support buffering. Movement uses `was_action_pre
 
 ### Architecture
 
-The audio system wraps Kira with lazy initialization (required on WASM for Web Audio API gesture requirements):
+The audio pipeline supports two distinct paradigms: **Static Audio** (sample playback) and **Procedural Audio** (generative synthesis).
+
+#### Static Audio (Kira)
+
+For traditional `.wav`/`.ogg` playback, the engine wraps `kira` with lazy initialization (required on WASM for Web Audio API gesture requirements):
 
 ```
 AudioManager
@@ -358,7 +362,16 @@ AudioManager
 └── UI track        (one-shot)
 ```
 
-Each track has independent volume control. Music and ambience use handle tracking to prevent overlapping loops.
+Each track has independent volume control. Music and ambience use handle tracking to prevent overlapping loops. All sounds are embedded via `include_bytes!()` and decoded at init time for cross-platform compatibility.
+
+#### Procedural Audio (Resonance & Cadence)
+
+To support dynamic, endless, and generative audio without inflating binary size with megabytes of static files, the ecosystem includes a custom, zero-allocation procedural audio stack built as independent crates:
+
+1. **Resonance (`no_std` DSP Primitive)**: A pure-math audio synthesis primitive. It generates waveforms (Sine, Square, Triangle, Sawtooth) via compile-time generated LUTs (via `build.rs`), eliminating the need for `std::f32::sin()` and enabling bare-metal usage. It features a programmable ADSR envelope system and handles PCM buffer filling entirely using fixed-point `u32` phase accumulators.
+2. **Cadence (`no_std` Sequencer)**: The mathematical logic core sitting above Resonance. It tracks time accurately via discrete audio sample counting (guaranteeing zero drift indefinitely) and executes deterministic algorithms like Euclidean Rhythms (Bjorklund's algorithm) and Markov Chains (via an LFSR) to trigger real-time events.
+
+**Decoupled Sinks:** Both Resonance and Cadence are pure state machines completely unaware of their audio sink. In native builds, they can be fed to a `cpal` audio driver. On the web, they compile to a tiny `wasm32-unknown-unknown` blob running directly inside an `AudioWorkletNode`, remaining perfectly phase-locked and executing completely off the main thread.
 
 ### Event-Driven SFX
 
@@ -371,10 +384,6 @@ ui.button("Attack").with_ui_sound(&mut ctx.pending_ui_audio);
 //? Game events (game-defined enum, game-managed queue)
 self.pending_game_audio.push(AudioEvent::Jump);
 ```
-
-### Sound Loading
-
-All sounds are embedded via `include_bytes!()` and decoded with `load_sound_data()` at init time for cross-platform compatibility.
 
 ---
 

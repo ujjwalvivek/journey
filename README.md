@@ -84,6 +84,8 @@ Journey/
 ├── engine/             //* The reusable library (journey-engine on crates.io)
 │   ├── src/lib.rs      //* Public API surface, GameApp trait, re-exports
 │   └── Cargo.toml      //* Dependencies: wgpu, winit, kira, egui, glam, bytemuck
+├── resonance/          //* The custom no_std DSP primitive (journey-audio)
+├── cadence/            //* The procedural audio sequencer (journey-synthesizer)
 ├── game/               //* The executable (Content)
 │    ├── pkg/           //* WASM Artifacts (Generated here)
 │    ├── src/main.rs    //* Native entry point
@@ -155,4 +157,5 @@ This forces a clean API from `engine` to `game`. It also allows the engine to be
 - [Game Programming Patterns](http://gameprogrammingpatterns.com/)
 - [Engine API Guide](https://github.com/ujjwalvivek/journey/blob/main/docs/src/ENGINE_API.md)
 - [Technical Documentation](https://github.com/ujjwalvivek/journey/blob/main/docs/src/TECHNICAL_DOCUMENTATION.md)
+- [Procedural Audio Documentation](https://github.com/ujjwalvivek/journey/blob/main/docs/src/AUDIO.md)
 - [Post-Mortem Blog Post](https://ujjwalvivek.com/blog/)

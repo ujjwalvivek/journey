@@ -23,10 +23,11 @@ use enemy::Enemy;
 use engine::egui;
 use engine::{Context, FixedTime, GameApp};
 use input::JourneyAction;
-use level::Level;
+use level::{Level, PlatformType};
 use level_editor::LevelEditor;
 use player::Player;
 use projectile::ProjectilePool;
+use std::collections::HashSet;
 mod scene;
 mod start_sequence;
 use scene::GameScene;
@@ -36,6 +37,92 @@ struct VfxBurst {
     timer: u16,
     max_timer: u16,
     color: [f32; 4],
+}
+
+fn tile_cell(platform: &level::Platform) -> (i32, i32) {
+    let pos = platform.aabb.top_left();
+    ((pos.x / 16.0).round() as i32, (pos.y / 16.0).round() as i32)
+}
+
+fn render_platform_tile(
+    ctx: &mut Context<JourneyAction>,
+    platform: &level::Platform,
+    solid_cells: &HashSet<(i32, i32)>,
+) {
+    let pos = platform.aabb.top_left();
+    let size = platform.aabb.size;
+    let cell = tile_cell(platform);
+    let has_left = solid_cells.contains(&(cell.0 - 1, cell.1));
+    let has_right = solid_cells.contains(&(cell.0 + 1, cell.1));
+    let has_up = solid_cells.contains(&(cell.0, cell.1 - 1));
+    let has_down = solid_cells.contains(&(cell.0, cell.1 + 1));
+
+    match platform.platform_type {
+        PlatformType::Floor | PlatformType::Crate => {
+            ctx.draw_rect(pos, size, [0.045, 0.070, 0.060, 1.0]);
+            if !has_up {
+                ctx.draw_rect(pos, engine::Vec2::new(size.x, 3.0), [0.72, 0.64, 0.34, 1.0]);
+                ctx.draw_rect_additive(
+                    pos - engine::Vec2::new(0.0, 1.0),
+                    engine::Vec2::new(size.x, 3.0),
+                    [0.95, 0.72, 0.28, 0.16],
+                );
+            }
+            if !has_down {
+                ctx.draw_rect(
+                    pos + engine::Vec2::new(0.0, size.y - 3.0),
+                    engine::Vec2::new(size.x, 3.0),
+                    [0.018, 0.026, 0.024, 1.0],
+                );
+            }
+            if !has_left {
+                ctx.draw_rect(pos, engine::Vec2::new(2.0, size.y), [0.13, 0.20, 0.16, 1.0]);
+            }
+            if !has_right {
+                ctx.draw_rect(
+                    pos + engine::Vec2::new(size.x - 2.0, 0.0),
+                    engine::Vec2::new(2.0, size.y),
+                    [0.018, 0.028, 0.026, 1.0],
+                );
+            }
+        }
+        PlatformType::Wall => {
+            ctx.draw_rect(pos, size, [0.035, 0.052, 0.050, 1.0]);
+            if !has_left {
+                ctx.draw_rect(pos, engine::Vec2::new(3.0, size.y), [0.22, 0.38, 0.31, 1.0]);
+            }
+            if !has_right {
+                ctx.draw_rect(
+                    pos + engine::Vec2::new(size.x - 3.0, 0.0),
+                    engine::Vec2::new(3.0, size.y),
+                    [0.014, 0.022, 0.020, 1.0],
+                );
+            }
+            if !has_up {
+                ctx.draw_rect(pos, engine::Vec2::new(size.x, 2.0), [0.52, 0.62, 0.42, 1.0]);
+            }
+            if !has_down {
+                ctx.draw_rect(
+                    pos + engine::Vec2::new(0.0, size.y - 2.0),
+                    engine::Vec2::new(size.x, 2.0),
+                    [0.014, 0.022, 0.020, 1.0],
+                );
+            }
+        }
+        PlatformType::OneWay => {
+            ctx.draw_rect(pos, size, [0.17, 0.27, 0.22, 1.0]);
+            ctx.draw_rect(
+                pos - engine::Vec2::new(0.0, 1.0),
+                engine::Vec2::new(size.x, 2.0),
+                [0.80, 0.68, 0.34, 1.0],
+            );
+            ctx.draw_rect_additive(
+                pos - engine::Vec2::new(0.0, 2.0),
+                engine::Vec2::new(size.x, 4.0),
+                [0.90, 0.60, 0.22, 0.12],
+            );
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -153,7 +240,6 @@ impl JourneyGame {
         );
         self.prev_camera_x = self.camera_x;
         self.prev_camera_y = self.camera_y;
-        let all_platform_aabbs: Vec<_> = self.level.platforms.iter().map(|p| p.aabb).collect();
         let mut enemies: Vec<Enemy> = self
             .level
             .enemy_spawns
@@ -161,7 +247,7 @@ impl JourneyGame {
             .map(|&(pos, etype)| Enemy::new(pos, etype))
             .collect();
         for enemy in &mut enemies {
-            enemy.bind_to_platform(&all_platform_aabbs);
+            enemy.bind_to_platform(self.level.all_aabbs());
         }
         self.enemies = enemies;
     }
@@ -303,14 +389,13 @@ impl GameApp for JourneyGame {
         let player = Player::new(start_pos, anim_state);
 
         //? Spawn enemies from level data and bind each to its platform.
-        let all_platform_aabbs: Vec<_> = level.platforms.iter().map(|p| p.aabb).collect();
         let mut enemies: Vec<Enemy> = level
             .enemy_spawns
             .iter()
             .map(|&(pos, etype)| Enemy::new(pos, etype))
             .collect();
         for enemy in &mut enemies {
-            enemy.bind_to_platform(&all_platform_aabbs);
+            enemy.bind_to_platform(level.all_aabbs());
         }
 
         //? Derive initial camera position directly from spawn so there is no lerp on frame 1.
@@ -384,12 +469,6 @@ impl GameApp for JourneyGame {
             return;
         }
 
-        //? Split platforms into solid and one-way for proper collision handling
-        let solid_aabbs = self.level.solid_aabbs();
-        let one_way_aabbs = self.level.one_way_aabbs();
-        let wall_aabbs = self.level.wall_aabbs();
-        let all_aabbs = self.level.all_aabbs();
-
         //? Update grapple target: nearest node OR staggered enemy.
         //? Staggered enemies ALWAYS take priority over static nodes (∞ range).
         //? Skip during GrapplePull/Slingshot, the target is locked when the pull begins.
@@ -418,15 +497,22 @@ impl GameApp for JourneyGame {
             }
         }
 
-        self.player.fixed_update(
-            ctx.delta_time,
-            fixed_time.tick,
-            fixed_time.tick_rate(),
-            solid_aabbs,
-            one_way_aabbs,
-            wall_aabbs,
-            &self.physics_config,
-        );
+        {
+            //? Movement stays on merged AABB slices for now. The resolver is
+            //? order-sensitive, so broadphase is only used on low-risk query paths.
+            let solid_aabbs = self.level.solid_aabbs();
+            let one_way_aabbs = self.level.one_way_aabbs();
+            let wall_aabbs = self.level.wall_aabbs();
+            self.player.fixed_update(
+                ctx.delta_time,
+                fixed_time.tick,
+                fixed_time.tick_rate(),
+                solid_aabbs,
+                one_way_aabbs,
+                wall_aabbs,
+                &self.physics_config,
+            );
+        }
 
         //? An enter_death() here starts the normal death -> respawn timer pipeline.
         if !self.player.is_dead && self.player.position().y > self.level.death_y_threshold {
@@ -440,8 +526,6 @@ impl GameApp for JourneyGame {
                 self.death_respawn_timer -= 1;
             } else {
                 self.player.respawn(self.level.player_spawn);
-                let all_platform_aabbs: Vec<_> =
-                    self.level.platforms.iter().map(|p| p.aabb).collect();
                 self.enemies = self
                     .level
                     .enemy_spawns
@@ -449,7 +533,7 @@ impl GameApp for JourneyGame {
                     .map(|&(pos, etype)| Enemy::new(pos, etype))
                     .collect();
                 for enemy in &mut self.enemies {
-                    enemy.bind_to_platform(&all_platform_aabbs);
+                    enemy.bind_to_platform(self.level.all_aabbs());
                 }
                 self.projectiles = ProjectilePool::new();
             }
@@ -535,40 +619,44 @@ impl GameApp for JourneyGame {
         }
 
         //? Freeze stagger timer for the enemy the player is grappling toward
-        for (idx, enemy) in self.enemies.iter_mut().enumerate() {
-            if !enemy.is_alive() {
-                enemy.death_flash_timer = enemy.death_flash_timer.saturating_sub(1);
-                continue;
-            }
-            //? If player is grapple-pulling to this enemy, freeze its stagger
-            let is_grapple_target = self.player.grapple_is_enemy_target
-                && self.player.state == crate::player::PlayerState::GrapplePull
-                && self
-                    .player
-                    .grapple_target
-                    .is_some_and(|t| (t - enemy.entity.position).length() < 4.0);
-            if is_grapple_target {
-                enemy.freeze_stagger();
-            }
+        {
+            let (all_aabbs, wall_aabbs, wall_grid) = self.level.enemy_collision_parts();
+            for (idx, enemy) in self.enemies.iter_mut().enumerate() {
+                if !enemy.is_alive() {
+                    enemy.death_flash_timer = enemy.death_flash_timer.saturating_sub(1);
+                    continue;
+                }
+                //? If player is grapple-pulling to this enemy, freeze its stagger
+                let is_grapple_target = self.player.grapple_is_enemy_target
+                    && self.player.state == crate::player::PlayerState::GrapplePull
+                    && self
+                        .player
+                        .grapple_target
+                        .is_some_and(|t| (t - enemy.entity.position).length() < 4.0);
+                if is_grapple_target {
+                    enemy.freeze_stagger();
+                }
 
-            if let Some(shoot) = enemy.fixed_update(
-                ctx.delta_time,
-                self.player.position(),
-                all_aabbs,
-                wall_aabbs,
-                self.physics_config.gravity,
-                self.physics_config.max_fall_speed,
-                &self.enemy_move_db,
-                fixed_time.tick_rate(),
-            ) {
-                self.projectiles.spawn(
-                    shoot.origin,
-                    shoot.target,
-                    enemy.handle(idx),
-                    shoot.speed,
-                    shoot.color,
-                );
-                self.pending_game_audio.push(AudioEvent::Projectile);
+                if let Some(shoot) = enemy.fixed_update_broadphase_los(
+                    ctx.delta_time,
+                    self.player.position(),
+                    all_aabbs,
+                    wall_aabbs,
+                    &mut *wall_grid,
+                    self.physics_config.gravity,
+                    self.physics_config.max_fall_speed,
+                    &self.enemy_move_db,
+                    fixed_time.tick_rate(),
+                ) {
+                    self.projectiles.spawn(
+                        shoot.origin,
+                        shoot.target,
+                        enemy.handle(idx),
+                        shoot.speed,
+                        shoot.color,
+                    );
+                    self.pending_game_audio.push(AudioEvent::Projectile);
+                }
             }
         }
 
@@ -623,7 +711,11 @@ impl GameApp for JourneyGame {
         }
 
         self.projectiles.update_all(ctx.delta_time);
-        let bounce_count = self.projectiles.collide_walls(solid_aabbs, ctx.delta_time);
+        let bounce_count = {
+            let (solid_aabbs, solid_grid) = self.level.solid_broadphase_parts();
+            self.projectiles
+                .collide_walls_broadphase(solid_aabbs, solid_grid, ctx.delta_time)
+        };
         for _ in 0..bounce_count {
             self.pending_game_audio.push(AudioEvent::ProjectileBounce);
         }
@@ -660,22 +752,46 @@ impl GameApp for JourneyGame {
         self.prev_camera_y = self.camera_y;
 
         let player_pos = self.player.position();
-        let target_camera_x = player_pos.x - ctx.screen_width / 2.0;
-        let blend = 0.1;
+        let camera = self.scene.camera;
+        let blend = (camera.catchup_speed / fixed_time.tick_rate() as f32).clamp(0.01, 1.0);
+        let lookahead_dir = if self.player.entity.velocity.x.abs() > 2.0 {
+            self.player.entity.velocity.x.signum()
+        } else if self.player.facing_right() {
+            1.0
+        } else {
+            -1.0
+        };
+        let tracked_x = player_pos.x + lookahead_dir * camera.lookahead_x;
+        let mut target_camera_x = self.camera_x;
+        let center_x = self.camera_x + ctx.screen_width * 0.5;
+        let half_dead_x = camera.dead_zone_x * 0.5;
+        if camera.dead_zone_x <= 0.0 {
+            target_camera_x = tracked_x - ctx.screen_width * 0.5;
+        } else if tracked_x < center_x - half_dead_x {
+            target_camera_x = tracked_x - ctx.screen_width * 0.5 + half_dead_x;
+        } else if tracked_x > center_x + half_dead_x {
+            target_camera_x = tracked_x - ctx.screen_width * 0.5 - half_dead_x;
+        }
         self.camera_x += (target_camera_x - self.camera_x) * blend;
 
-        let top_trigger = self.camera_y + ctx.screen_height * 0.30;
-        let bottom_trigger = self.camera_y + ctx.screen_height * 0.70;
-        if player_pos.y < top_trigger {
-            let target_y = player_pos.y - ctx.screen_height * 0.30;
-            self.camera_y += (target_y - self.camera_y) * blend;
-        } else if player_pos.y > bottom_trigger {
-            let target_y = player_pos.y - ctx.screen_height * 0.70;
-            self.camera_y += (target_y - self.camera_y) * blend;
+        let tracked_y = player_pos.y + camera.vertical_bias;
+        let center_y = self.camera_y + ctx.screen_height * 0.5;
+        let half_dead_y = camera.dead_zone_y * 0.5;
+        let mut target_camera_y = self.camera_y;
+        if camera.dead_zone_y <= 0.0 {
+            target_camera_y = tracked_y - ctx.screen_height * 0.5;
+        } else if tracked_y < center_y - half_dead_y {
+            target_camera_y = tracked_y - ctx.screen_height * 0.5 + half_dead_y;
+        } else if tracked_y > center_y + half_dead_y {
+            target_camera_y = tracked_y - ctx.screen_height * 0.5 - half_dead_y;
         }
+        self.camera_y += (target_camera_y - self.camera_y) * blend;
 
         if (target_camera_x - self.camera_x).abs() < 0.5 {
             self.camera_x = target_camera_x;
+        }
+        if (target_camera_y - self.camera_y).abs() < 0.5 {
+            self.camera_y = target_camera_y;
         }
 
         self.camera_x = self.camera_x.max(0.0);
@@ -899,6 +1015,13 @@ impl GameApp for JourneyGame {
         let cam_top = ctx.camera_offset_y;
         let cam_right = cam_left + ctx.screen_width;
         let cam_bottom = cam_top + ctx.screen_height;
+        let solid_cells: HashSet<(i32, i32)> = self
+            .level
+            .platforms
+            .iter()
+            .filter(|p| p.platform_type != PlatformType::OneWay)
+            .map(tile_cell)
+            .collect();
 
         for platform in &self.level.platforms {
             let pos = platform.aabb.top_left();
@@ -907,8 +1030,7 @@ impl GameApp for JourneyGame {
             if right < cam_left || pos.x > cam_right || bottom < cam_top || pos.y > cam_bottom {
                 continue;
             }
-            let color = level::Level::platform_color(platform.platform_type);
-            ctx.draw_rect(pos, platform.aabb.size, color);
+            render_platform_tile(ctx, platform, &solid_cells);
         }
 
         //? Render grapple nodes with a glow
@@ -1206,6 +1328,7 @@ impl GameApp for JourneyGame {
                         .anim_state
                         .current_animation_name()
                         .map(String::from),
+                    collision_stats: self.level.collision_stats(),
                     physics_config: &mut self.physics_config,
                     using_gamepad: self.using_gamepad,
                     show_physics_tuner_in_game: self.show_physics_tuner_in_game,

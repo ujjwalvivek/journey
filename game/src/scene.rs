@@ -6,10 +6,32 @@ use crate::combat::fsm::CombatState;
 use crate::combat::input_buffer::CombatInputBuffer;
 use crate::config::PhysicsConfig;
 use crate::enemy::Enemy;
+use crate::level::LevelCollisionStats;
 use crate::player::PlayerState;
 use engine::SceneParams;
 use engine::egui;
 use engine::{AudioResponse, UiAudioEvent, ui as journey_ui};
+
+#[derive(Debug, Clone, Copy)]
+pub struct CameraTuning {
+    pub lookahead_x: f32,
+    pub dead_zone_x: f32,
+    pub dead_zone_y: f32,
+    pub vertical_bias: f32,
+    pub catchup_speed: f32,
+}
+
+impl Default for CameraTuning {
+    fn default() -> Self {
+        Self {
+            lookahead_x: 69.0,
+            dead_zone_x: 64.0,
+            dead_zone_y: 96.0,
+            vertical_bias: 18.0,
+            catchup_speed: 8.0,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct GameScene {
@@ -17,6 +39,7 @@ pub struct GameScene {
     pub show_collision_box: bool,
     pub show_fps: bool,
     pub show_combat: bool,
+    pub camera: CameraTuning,
     pub day_night_cycle: bool,
     pub day_night_phase: f32,
 }
@@ -28,6 +51,7 @@ impl Default for GameScene {
             show_collision_box: false,
             show_fps: false,
             show_combat: false,
+            camera: CameraTuning::default(),
             day_night_cycle: false,
             day_night_phase: 0.0,
         }
@@ -39,16 +63,16 @@ impl GameScene {
         engine::SkyParams {
             enabled: true,
             horizon_glow: 0.08,
-            top_color: [0.01, 0.01, 0.06],
-            horizon_color: [0.04, 0.03, 0.12],
-            bottom_color: [0.005, 0.005, 0.02],
+            top_color: [0.006, 0.018, 0.018],
+            horizon_color: [0.025, 0.04, 0.035],
+            bottom_color: [0.003, 0.008, 0.006],
             horizon_y: 0.45,
             horizon_width: 0.12,
         }
     }
 
     pub fn night_fog_color() -> [f32; 3] {
-        [0.05, 0.03, 0.15]
+        [0.015, 0.045, 0.035]
     }
 
     pub fn day_night_t(&self) -> f32 {
@@ -76,6 +100,7 @@ pub struct DebugUiParams<'a> {
     pub wall_grab_timer: u16,
     pub grapple_target: Option<engine::Vec2>,
     pub anim_name: Option<String>,
+    pub collision_stats: LevelCollisionStats,
     pub physics_config: &'a mut PhysicsConfig,
     pub using_gamepad: bool, //* Preserve this bool for later UI updates INGAME
     pub show_physics_tuner_in_game: bool,
@@ -103,6 +128,7 @@ pub fn show_ui(p: DebugUiParams<'_>) {
         wall_grab_timer,
         grapple_target,
         anim_name,
+        collision_stats,
         physics_config,
         using_gamepad: _using_gamepad,
         show_physics_tuner_in_game,
@@ -115,213 +141,301 @@ pub fn show_ui(p: DebugUiParams<'_>) {
     let content_rect = ctx.available_rect();
     let window_width = 280.0f32.min(content_rect.width() * 0.9);
 
-    egui::Window::new("Game Controls")
-        .default_open(false)
-        .default_width(window_width)
-        .default_pos([10.0, 10.0])
-        .constrain(true)
-        .show(ctx, |ui| {
-            ui.checkbox(&mut scene.show_collision_box, "Show collision Box")
-                .with_checkbox_sound(scene.show_collision_box, pending_audio);
-            ui.checkbox(&mut scene.show_fps, "Show FPS")
-                .with_checkbox_sound(scene.show_fps, pending_audio);
-            ui.checkbox(&mut scene.show_combat, "Show combat FSM")
-                .with_checkbox_sound(scene.show_combat, pending_audio);
+    egui::Window::new(
+        egui::RichText::new("Game Controls")
+            .font(egui::FontId::new(18.0, egui::FontFamily::Monospace))
+            .strong()
+            .color(theme.text),
+    )
+    .default_open(false)
+    .default_width(window_width)
+    .default_pos([10.0, 10.0])
+    .constrain(true)
+    .show(ctx, |ui| {
+        let scale = (ui.ctx().viewport_rect().height() / 1080.0).clamp(0.45, 1.0);
+
+        ui.checkbox(&mut scene.show_collision_box, "Show collision Box")
+            .with_checkbox_sound(scene.show_collision_box, pending_audio);
+        ui.checkbox(&mut scene.show_fps, "Show FPS")
+            .with_checkbox_sound(scene.show_fps, pending_audio);
+        ui.checkbox(&mut scene.show_combat, "Show combat FSM")
+            .with_checkbox_sound(scene.show_combat, pending_audio);
+
+        ui.separator();
+        ui.label(journey_ui::command_label("Camera", 13.0 * scale));
+        journey_ui::slider_f32(
+            ui,
+            "Lookahead X",
+            &mut scene.camera.lookahead_x,
+            0.0..=160.0,
+            scale,
+            |v| format!("{v:.0}"),
+        );
+        journey_ui::slider_f32(
+            ui,
+            "Dead Zone X",
+            &mut scene.camera.dead_zone_x,
+            0.0..=240.0,
+            scale,
+            |v| format!("{v:.0}"),
+        );
+        journey_ui::slider_f32(
+            ui,
+            "Dead Zone Y",
+            &mut scene.camera.dead_zone_y,
+            0.0..=240.0,
+            scale,
+            |v| format!("{v:.0}"),
+        );
+        journey_ui::slider_f32(
+            ui,
+            "Vertical Bias",
+            &mut scene.camera.vertical_bias,
+            -120.0..=120.0,
+            scale,
+            |v| format!("{v:.0}"),
+        );
+        journey_ui::slider_f32(
+            ui,
+            "Follow Speed",
+            &mut scene.camera.catchup_speed,
+            1.0..=30.0,
+            scale,
+            |v| format!("{v:.1}"),
+        );
+        if ui.button("Reset Camera").clicked() {
+            scene.camera = CameraTuning::default();
+        }
+
+        ui.separator();
+        ui.label(journey_ui::command_label("Level", 13.0 * scale));
+        journey_ui::key_value(
+            ui,
+            "Raw Tiles",
+            format!("{}", collision_stats.raw_platforms),
+            scale,
+        );
+        journey_ui::key_value(
+            ui,
+            "Solid",
+            format!(
+                "{} -> {}",
+                collision_stats.raw_solid, collision_stats.merged_solid
+            ),
+            scale,
+        );
+        journey_ui::key_value(
+            ui,
+            "Walls",
+            format!(
+                "{} -> {}",
+                collision_stats.raw_wall, collision_stats.merged_wall
+            ),
+            scale,
+        );
+        journey_ui::key_value(
+            ui,
+            "One-Way",
+            format!(
+                "{} -> {}",
+                collision_stats.raw_one_way, collision_stats.merged_one_way
+            ),
+            scale,
+        );
+
+        ui.separator();
+        ui.label(journey_ui::command_label("Sky", 13.0 * scale));
+
+        {
+            ui.horizontal(|ui| {
+                ui.label("Top");
+                ui.color_edit_button_rgb(&mut params.sky.top_color);
+            });
+            ui.horizontal(|ui| {
+                ui.label("Horizon");
+                ui.color_edit_button_rgb(&mut params.sky.horizon_color);
+            });
+            ui.horizontal(|ui| {
+                ui.label("Bottom");
+                ui.color_edit_button_rgb(&mut params.sky.bottom_color);
+            });
+            journey_ui::slider_f32(
+                ui,
+                "Horizon Glow",
+                &mut params.sky.horizon_glow,
+                0.0..=1.0,
+                scale,
+                |v| format!("{v:.2}"),
+            );
+            journey_ui::slider_f32(
+                ui,
+                "Horizon Y",
+                &mut params.sky.horizon_y,
+                0.0..=1.0,
+                scale,
+                |v| format!("{v:.2}"),
+            );
+            journey_ui::slider_f32(
+                ui,
+                "Softness",
+                &mut params.sky.horizon_width,
+                0.01..=0.6,
+                scale,
+                |v| format!("{v:.2}"),
+            );
+            {
+                let r = journey_ui::toggle(ui, &mut params.fog_enabled, "Fog", scale);
+                r.with_checkbox_sound(params.fog_enabled, pending_audio);
+            }
+            if params.fog_enabled {
+                ui.horizontal(|ui| {
+                    ui.label("Fog");
+                    ui.color_edit_button_rgb(&mut params.fog_color);
+                });
+                journey_ui::slider_u32(ui, "Fog Seed", &mut params.seed, 0..=9999, scale);
+                journey_ui::slider_f32(
+                    ui,
+                    "Fog Density",
+                    &mut params.fog_density,
+                    0.5..=20.0,
+                    scale,
+                    |v| format!("{v:.2}"),
+                );
+                journey_ui::slider_f32(
+                    ui,
+                    "Fog Opacity",
+                    &mut params.fog_opacity,
+                    0.0..=1.0,
+                    scale,
+                    |v| format!("{v:.2}"),
+                );
+                journey_ui::slider_f32(
+                    ui,
+                    "Fog Speed",
+                    &mut params.fog_anim_speed,
+                    0.0..=2.0,
+                    scale,
+                    |v| format!("{v:.2}"),
+                );
+            }
+            if ui.button("Reset Sky").clicked() {
+                params.sky = Default::default();
+                params.fog_enabled = true;
+                params.fog_color = [0.08, 0.18, 0.14];
+                params.fog_density = 14.0;
+                params.fog_opacity = 0.55;
+                params.fog_anim_speed = 0.35;
+            }
+
+            ui.add_space(6.0);
+            {
+                let r =
+                    journey_ui::toggle(ui, &mut scene.day_night_cycle, "Day/Night Cycle", scale);
+                r.with_checkbox_sound(scene.day_night_cycle, pending_audio);
+                if scene.day_night_cycle {
+                    let t = scene.day_night_t();
+                    let hours = (t * 24.0) as u32;
+                    let minutes = ((t * 24.0 % 1.0) * 60.0) as u32;
+                    ui.label(
+                        egui::RichText::new(format!("{hours:02}:{minutes:02}"))
+                            .font(egui::FontId::new(12.0, egui::FontFamily::Monospace))
+                            .color(theme.muted),
+                    );
+                }
+            }
+        }
+
+        if scene.show_fps {
+            ui.separator();
+            ui.label(format!("FPS: {:.1}", fps));
+            ui.label(format!("Frame: {:.2}ms", frame_time_ms));
+            ui.separator();
+            ui.label("Fixed Tick Rate:");
+            ui.horizontal(|ui| {
+                if ui
+                    .selectable_label(*fixed_tick_rate == 30, "30 Hz")
+                    .clicked()
+                {
+                    *fixed_tick_rate = 30;
+                }
+                if ui
+                    .selectable_label(*fixed_tick_rate == 60, "60 Hz")
+                    .clicked()
+                {
+                    *fixed_tick_rate = 60;
+                }
+            });
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                ui.separator();
+                ui.label("Visual FPS Lock:");
+                ui.horizontal(|ui| {
+                    if ui.selectable_label(*target_fps == 0, "Uncapped").clicked() {
+                        *target_fps = 0;
+                    }
+                    if ui.selectable_label(*target_fps == 60, "60 FPS").clicked() {
+                        *target_fps = 60;
+                    }
+                    if ui.selectable_label(*target_fps == 30, "30 FPS").clicked() {
+                        *target_fps = 30;
+                    }
+                });
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                let _ = target_fps;
+            }
+        }
+
+        if scene.show_combat {
+            ui.separator();
+            ui.heading("Player");
+            ui.label(format!("State: {:?}", player_state));
+            if let Some(ref name) = anim_name {
+                ui.label(format!("Anim: {}", name));
+            }
+            ui.label(format!("Phase: {:?}", combat.phase));
+            ui.label(format!("Frame: {}", combat.frame_timer));
+            ui.label(format!("Move: {:?}", combat.current_move));
+            if combat.invincible {
+                ui.colored_label(theme.accent, "I-FRAMES");
+            }
+            if dash_cooldown > 0 {
+                ui.label(format!("Dash CD: {}", dash_cooldown));
+            }
+            if has_air_dashed {
+                ui.colored_label(theme.muted, "Air-dash used");
+            }
+            if wall_left || wall_right {
+                let side = if wall_left { "LEFT" } else { "RIGHT" };
+                ui.colored_label(theme.accent, format!("Wall: {}", side));
+            }
+            if wall_grab_timer > 0 {
+                ui.label(format!("Wall grab: {} ticks", wall_grab_timer));
+            }
+            if let Some(target) = grapple_target {
+                ui.colored_label(
+                    theme.accent,
+                    format!("Grapple: ({:.0}, {:.0})", target.x, target.y),
+                );
+            }
+            if input_buffer.has_pending() {
+                ui.colored_label(
+                    theme.accent,
+                    format!("Input Queue: {} pending", input_buffer.len()),
+                );
+            }
 
             ui.separator();
-            let scale = (ui.ctx().viewport_rect().height() / 1080.0).clamp(0.45, 1.0);
-            ui.label(journey_ui::command_label("Sky", 13.0 * scale));
-
-            {
-                ui.horizontal(|ui| {
-                    ui.label("Top");
-                    ui.color_edit_button_rgb(&mut params.sky.top_color);
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Horizon");
-                    ui.color_edit_button_rgb(&mut params.sky.horizon_color);
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Bottom");
-                    ui.color_edit_button_rgb(&mut params.sky.bottom_color);
-                });
-                journey_ui::slider_f32(
-                    ui,
-                    "Horizon Glow",
-                    &mut params.sky.horizon_glow,
-                    0.0..=1.0,
-                    scale,
-                    |v| format!("{v:.2}"),
-                );
-                journey_ui::slider_f32(
-                    ui,
-                    "Horizon Y",
-                    &mut params.sky.horizon_y,
-                    0.0..=1.0,
-                    scale,
-                    |v| format!("{v:.2}"),
-                );
-                journey_ui::slider_f32(
-                    ui,
-                    "Softness",
-                    &mut params.sky.horizon_width,
-                    0.01..=0.6,
-                    scale,
-                    |v| format!("{v:.2}"),
-                );
-                {
-                    let r = journey_ui::toggle(ui, &mut params.fog_enabled, "Fog", scale);
-                    r.with_checkbox_sound(params.fog_enabled, pending_audio);
-                }
-                if params.fog_enabled {
-                    ui.horizontal(|ui| {
-                        ui.label("Fog");
-                        ui.color_edit_button_rgb(&mut params.fog_color);
-                    });
-                    journey_ui::slider_u32(ui, "Fog Seed", &mut params.seed, 0..=9999, scale);
-                    journey_ui::slider_f32(
-                        ui,
-                        "Fog Density",
-                        &mut params.fog_density,
-                        0.5..=20.0,
-                        scale,
-                        |v| format!("{v:.2}"),
-                    );
-                    journey_ui::slider_f32(
-                        ui,
-                        "Fog Opacity",
-                        &mut params.fog_opacity,
-                        0.0..=1.0,
-                        scale,
-                        |v| format!("{v:.2}"),
-                    );
-                    journey_ui::slider_f32(
-                        ui,
-                        "Fog Speed",
-                        &mut params.fog_anim_speed,
-                        0.0..=2.0,
-                        scale,
-                        |v| format!("{v:.2}"),
-                    );
-                }
-                if ui.button("Reset Sky").clicked() {
-                    params.sky = Default::default();
-                    params.fog_enabled = true;
-                    params.fog_color = [0.41, 0.36, 0.81];
-                    params.fog_density = 10.0;
-                    params.fog_opacity = 1.0;
-                    params.fog_anim_speed = 0.5;
-                }
-
-                ui.add_space(6.0);
-                {
-                    let r =
-                        journey_ui::toggle(ui, &mut scene.day_night_cycle, "Day/Night Cycle", scale);
-                    r.with_checkbox_sound(scene.day_night_cycle, pending_audio);
-                    if scene.day_night_cycle {
-                        let t = scene.day_night_t();
-                        let hours = (t * 24.0) as u32;
-                        let minutes = ((t * 24.0 % 1.0) * 60.0) as u32;
-                        ui.label(
-                            egui::RichText::new(format!("{hours:02}:{minutes:02}"))
-                                .font(egui::FontId::new(12.0, egui::FontFamily::Monospace))
-                                .color(theme.muted),
-                        );
-                    }
-                }
+            let alive = enemies.iter().filter(|e| e.is_alive()).count();
+            ui.heading(format!("Enemies ({}/{})", alive, enemies.len()));
+            if let Some(e) = enemies.iter().find(|e| e.is_alive()) {
+                ui.label(format!("Type: {:?}", e.enemy_type));
+                ui.label(format!("State: {:?}", e.state));
+                ui.label(format!("Phase: {:?}", e.entity.combat.phase));
             }
-
-            if scene.show_fps {
-                ui.separator();
-                ui.label(format!("FPS: {:.1}", fps));
-                ui.label(format!("Frame: {:.2}ms", frame_time_ms));
-                ui.separator();
-                ui.label("Fixed Tick Rate:");
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(*fixed_tick_rate == 30, "30 Hz")
-                        .clicked()
-                    {
-                        *fixed_tick_rate = 30;
-                    }
-                    if ui
-                        .selectable_label(*fixed_tick_rate == 60, "60 Hz")
-                        .clicked()
-                    {
-                        *fixed_tick_rate = 60;
-                    }
-                });
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    ui.separator();
-                    ui.label("Visual FPS Lock:");
-                    ui.horizontal(|ui| {
-                        if ui.selectable_label(*target_fps == 0, "Uncapped").clicked() {
-                            *target_fps = 0;
-                        }
-                        if ui.selectable_label(*target_fps == 60, "60 FPS").clicked() {
-                            *target_fps = 60;
-                        }
-                        if ui.selectable_label(*target_fps == 30, "30 FPS").clicked() {
-                            *target_fps = 30;
-                        }
-                    });
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    let _ = target_fps;
-                }
-            }
-
-            if scene.show_combat {
-                ui.separator();
-                ui.heading("Player");
-                ui.label(format!("State: {:?}", player_state));
-                if let Some(ref name) = anim_name {
-                    ui.label(format!("Anim: {}", name));
-                }
-                ui.label(format!("Phase: {:?}", combat.phase));
-                ui.label(format!("Frame: {}", combat.frame_timer));
-                ui.label(format!("Move: {:?}", combat.current_move));
-                if combat.invincible {
-                    ui.colored_label(theme.accent, "I-FRAMES");
-                }
-                if dash_cooldown > 0 {
-                    ui.label(format!("Dash CD: {}", dash_cooldown));
-                }
-                if has_air_dashed {
-                    ui.colored_label(theme.muted, "Air-dash used");
-                }
-                if wall_left || wall_right {
-                    let side = if wall_left { "LEFT" } else { "RIGHT" };
-                    ui.colored_label(theme.accent, format!("Wall: {}", side));
-                }
-                if wall_grab_timer > 0 {
-                    ui.label(format!("Wall grab: {} ticks", wall_grab_timer));
-                }
-                if let Some(target) = grapple_target {
-                    ui.colored_label(
-                        theme.accent,
-                        format!("Grapple: ({:.0}, {:.0})", target.x, target.y),
-                    );
-                }
-                if input_buffer.has_pending() {
-                    ui.colored_label(
-                        theme.accent,
-                        format!("Input Queue: {} pending", input_buffer.len()),
-                    );
-                }
-
-                ui.separator();
-                let alive = enemies.iter().filter(|e| e.is_alive()).count();
-                ui.heading(format!("Enemies ({}/{})", alive, enemies.len()));
-                if let Some(e) = enemies.iter().find(|e| e.is_alive()) {
-                    ui.label(format!("Type: {:?}", e.enemy_type));
-                    ui.label(format!("State: {:?}", e.state));
-                    ui.label(format!("Phase: {:?}", e.entity.combat.phase));
-                }
-            }
-        });
+        }
+    });
 
     if show_physics_tuner_in_game {
         show_physics_tuner_window(ctx, physics_config, content_rect);

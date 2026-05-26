@@ -4,6 +4,7 @@
 *?  and any rectangular object needing collision checks.
 *------------------------------------------------------------**/
 use glam::Vec2;
+use std::collections::HashMap;
 
 //? Axis-Aligned Bounding Box for 2D collision detection.
 //* AABBs are simple and efficient for collision detection
@@ -94,6 +95,110 @@ impl AABB {
             let sign = if sign == 0.0 { -1.0 } else { sign };
             Some(Vec2::new(0.0, overlap.y * sign))
         }
+    }
+}
+
+//? Reusable uniform-grid broadphase for AABB queries.
+//* Stores caller-owned item indices. It only reduces candidate counts; exact
+//* collision checks still belong to the caller.
+#[derive(Debug, Clone)]
+pub struct SpatialGrid {
+    cell_size: f32,
+    cells: HashMap<(i32, i32), Vec<usize>>,
+    query_results: Vec<usize>,
+    query_marks: Vec<u32>,
+    query_stamp: u32,
+}
+
+impl SpatialGrid {
+    pub fn new(cell_size: f32) -> Self {
+        Self {
+            cell_size: cell_size.max(1.0),
+            cells: HashMap::new(),
+            query_results: Vec::new(),
+            query_marks: Vec::new(),
+            query_stamp: 1,
+        }
+    }
+
+    pub fn cell_size(&self) -> f32 {
+        self.cell_size
+    }
+
+    pub fn clear(&mut self) {
+        self.cells.clear();
+        self.query_results.clear();
+    }
+
+    pub fn rebuild(&mut self, items: &[AABB]) {
+        self.clear();
+        self.query_marks.resize(items.len(), 0);
+        for (index, aabb) in items.iter().enumerate() {
+            self.insert(index, aabb);
+        }
+    }
+
+    pub fn insert(&mut self, index: usize, aabb: &AABB) {
+        if self.query_marks.len() <= index {
+            self.query_marks.resize(index + 1, 0);
+        }
+
+        let (min_x, max_x, min_y, max_y) = self.cell_range(aabb);
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                self.cells.entry((x, y)).or_default().push(index);
+            }
+        }
+    }
+
+    pub fn query(&mut self, aabb: &AABB) -> &[usize] {
+        self.query_results.clear();
+        self.advance_query_stamp();
+
+        let (min_x, max_x, min_y, max_y) = self.cell_range(aabb);
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let Some(indices) = self.cells.get(&(x, y)) else {
+                    continue;
+                };
+                for &index in indices {
+                    if index >= self.query_marks.len() {
+                        continue;
+                    }
+                    if self.query_marks[index] == self.query_stamp {
+                        continue;
+                    }
+                    self.query_marks[index] = self.query_stamp;
+                    self.query_results.push(index);
+                }
+            }
+        }
+
+        &self.query_results
+    }
+
+    fn advance_query_stamp(&mut self) {
+        if self.query_stamp == u32::MAX {
+            self.query_marks.fill(0);
+            self.query_stamp = 1;
+        } else {
+            self.query_stamp += 1;
+        }
+    }
+
+    fn cell_range(&self, aabb: &AABB) -> (i32, i32, i32, i32) {
+        let min = aabb.min();
+        let max = aabb.max();
+        let min_x = (min.x / self.cell_size).floor() as i32;
+        let max_x = (max.x / self.cell_size).floor() as i32;
+        let min_y = (min.y / self.cell_size).floor() as i32;
+        let max_y = (max.y / self.cell_size).floor() as i32;
+        (
+            min_x.min(max_x),
+            min_x.max(max_x),
+            min_y.min(max_y),
+            min_y.max(max_y),
+        )
     }
 }
 
@@ -246,5 +351,39 @@ mod tests {
         assert!(mtv.is_some());
         let mtv = mtv.unwrap();
         assert!(mtv.x < 0.0, "should push mover left, away from wall");
+    }
+
+    #[test]
+    fn spatial_grid_queries_nearby_indices() {
+        let items = [
+            AABB::new(Vec2::new(8.0, 8.0), Vec2::new(16.0, 16.0)),
+            AABB::new(Vec2::new(80.0, 8.0), Vec2::new(16.0, 16.0)),
+            AABB::new(Vec2::new(8.0, 80.0), Vec2::new(16.0, 16.0)),
+        ];
+        let mut grid = SpatialGrid::new(16.0);
+        grid.rebuild(&items);
+
+        let query = AABB::new(Vec2::new(10.0, 10.0), Vec2::new(20.0, 20.0));
+        assert_eq!(grid.query(&query), &[0]);
+    }
+
+    #[test]
+    fn spatial_grid_deduplicates_multi_cell_items() {
+        let items = [AABB::new(Vec2::new(16.0, 16.0), Vec2::new(48.0, 48.0))];
+        let mut grid = SpatialGrid::new(16.0);
+        grid.rebuild(&items);
+
+        let query = AABB::new(Vec2::new(16.0, 16.0), Vec2::new(48.0, 48.0));
+        assert_eq!(grid.query(&query), &[0]);
+    }
+
+    #[test]
+    fn spatial_grid_supports_negative_coordinates() {
+        let items = [AABB::new(Vec2::new(-16.0, -16.0), Vec2::new(8.0, 8.0))];
+        let mut grid = SpatialGrid::new(16.0);
+        grid.rebuild(&items);
+
+        let query = AABB::new(Vec2::new(-16.0, -16.0), Vec2::new(16.0, 16.0));
+        assert_eq!(grid.query(&query), &[0]);
     }
 }

@@ -8,6 +8,8 @@ use crate::level::Level;
 use engine::egui;
 use engine::{AudioResponse, UiAudioEvent, ui as journey_ui};
 
+const MAX_UNDO_DEPTH: usize = 128;
+
 pub struct LevelEditor {
     pub active: bool,
     pub visual_mode: bool,
@@ -17,6 +19,9 @@ pub struct LevelEditor {
     pub camera_x: f32,
     pub camera_y: f32,
     pub selected_tile: char,
+    undo_stack: Vec<String>,
+    redo_stack: Vec<String>,
+    painting: bool,
 }
 
 impl Default for LevelEditor {
@@ -39,6 +44,9 @@ impl LevelEditor {
             camera_x: 0.0,
             camera_y: 0.0,
             selected_tile: '#',
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            painting: false,
         }
     }
 
@@ -86,6 +94,62 @@ impl LevelEditor {
         }
     }
 
+    fn push_undo_state(&mut self, snapshot: String) {
+        if self.undo_stack.last() == Some(&snapshot) {
+            return;
+        }
+        self.undo_stack.push(snapshot);
+        if self.undo_stack.len() > MAX_UNDO_DEPTH {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+    }
+
+    fn restore_buffer(&mut self, level: &mut Level, screen_height: f32, text: String) {
+        self.text_buffer = text;
+        level.reload_from_str(&self.text_buffer, screen_height);
+    }
+
+    fn undo(&mut self, level: &mut Level, screen_height: f32) {
+        let Some(previous) = self.undo_stack.pop() else {
+            return;
+        };
+        self.redo_stack.push(self.text_buffer.clone());
+        self.restore_buffer(level, screen_height, previous);
+        self.reset_text_scroll = true;
+    }
+
+    fn redo(&mut self, level: &mut Level, screen_height: f32) {
+        let Some(next) = self.redo_stack.pop() else {
+            return;
+        };
+        self.undo_stack.push(self.text_buffer.clone());
+        self.restore_buffer(level, screen_height, next);
+        self.reset_text_scroll = true;
+    }
+
+    fn handle_undo_redo_shortcuts(
+        &mut self,
+        ctx: &egui::Context,
+        level: &mut Level,
+        screen_height: f32,
+    ) {
+        let (undo, redo) = ctx.input(|i| {
+            let command = i.modifiers.command;
+            let undo = command && i.key_pressed(egui::Key::Z) && !i.modifiers.shift;
+            let redo = command
+                && (i.key_pressed(egui::Key::Y)
+                    || (i.key_pressed(egui::Key::Z) && i.modifiers.shift));
+            (undo, redo)
+        });
+
+        if undo {
+            self.undo(level, screen_height);
+        } else if redo {
+            self.redo(level, screen_height);
+        }
+    }
+
     fn show_text_editor(
         &mut self,
         ctx: &egui::Context,
@@ -93,6 +157,8 @@ impl LevelEditor {
         screen_height: f32,
         pending_audio: &mut Vec<UiAudioEvent>,
     ) {
+        self.handle_undo_redo_shortcuts(ctx, level, screen_height);
+
         let letterbox = crate::start_sequence::menu_letterbox_rect(ctx);
         journey_ui::paint_screen(ctx, "level_editor_text_bg", letterbox);
 
@@ -129,7 +195,9 @@ impl LevelEditor {
                     ui.horizontal(|ui| {
                         let tab_spacing = 8.0 * ui_scale;
                         let save_w = 160.0 * ui_scale;
-                        let total_w = 2.0 * 112.0 * ui_scale + save_w + 2.0 * tab_spacing;
+                        let edit_w = 104.0 * ui_scale;
+                        let total_w =
+                            2.0 * 112.0 * ui_scale + 2.0 * edit_w + save_w + 4.0 * tab_spacing;
                         ui.add_space((ui.available_width() - total_w).max(0.0) / 2.0);
 
                         let _ = journey_ui::tab(ui, "Text", true, ui_scale);
@@ -142,6 +210,32 @@ impl LevelEditor {
                             self.visual_mode = true;
                             self.reset_text_scroll = true;
                             self.save_and_reload(level, screen_height);
+                        }
+                        ui.add_space(tab_spacing);
+
+                        if ui
+                            .add_enabled(
+                                !self.undo_stack.is_empty(),
+                                journey_ui::command_button("Undo", false, ui_scale)
+                                    .min_size(egui::vec2(edit_w, 34.0 * ui_scale)),
+                            )
+                            .with_ui_sound(pending_audio)
+                            .clicked()
+                        {
+                            self.undo(level, screen_height);
+                        }
+                        ui.add_space(tab_spacing);
+
+                        if ui
+                            .add_enabled(
+                                !self.redo_stack.is_empty(),
+                                journey_ui::command_button("Redo", false, ui_scale)
+                                    .min_size(egui::vec2(edit_w, 34.0 * ui_scale)),
+                            )
+                            .with_ui_sound(pending_audio)
+                            .clicked()
+                        {
+                            self.redo(level, screen_height);
                         }
                         ui.add_space(tab_spacing);
 
@@ -293,10 +387,12 @@ impl LevelEditor {
                                                     egui::text_edit::TextEditState::default()
                                                         .store(ui.ctx(), text_edit_id);
                                                 }
+                                                let before_edit = self.text_buffer.clone();
+                                                let mut text_changed = false;
                                                 text_scroll.show(ui, |ui| {
                                                     ui.horizontal(|ui| {
                                                         ui.add_space(content_gutter);
-                                                        ui.add(
+                                                        let response = ui.add(
                                                             egui::TextEdit::multiline(
                                                                 &mut self.text_buffer,
                                                             )
@@ -313,9 +409,13 @@ impl LevelEditor {
                                                             .lock_focus(false)
                                                             .cursor_at_end(false),
                                                         );
+                                                        text_changed = response.changed();
                                                         ui.add_space(content_gutter);
                                                     });
                                                 });
+                                                if text_changed && before_edit != self.text_buffer {
+                                                    self.push_undo_state(before_edit);
+                                                }
                                             });
 
                                         ui.add_space(section_spacing);
@@ -470,6 +570,7 @@ impl LevelEditor {
     ) {
         let internal_w = 640.0;
         let internal_h = 360.0;
+        self.handle_undo_redo_shortcuts(egui_ctx, level, internal_h);
 
         let logical_rect = egui_ctx.viewport_rect();
         let logical_w = logical_rect.width();
@@ -587,6 +688,28 @@ impl LevelEditor {
                         self.save_and_reload(level, internal_h);
                     }
                     if ui
+                        .add_enabled(
+                            !self.undo_stack.is_empty(),
+                            journey_ui::command_button("Undo", false, ui_scale)
+                                .min_size(egui::vec2(90.0 * ui_scale, 32.0 * ui_scale)),
+                        )
+                        .with_ui_sound(pending_audio)
+                        .clicked()
+                    {
+                        self.undo(level, internal_h);
+                    }
+                    if ui
+                        .add_enabled(
+                            !self.redo_stack.is_empty(),
+                            journey_ui::command_button("Redo", false, ui_scale)
+                                .min_size(egui::vec2(90.0 * ui_scale, 32.0 * ui_scale)),
+                        )
+                        .with_ui_sound(pending_audio)
+                        .clicked()
+                    {
+                        self.redo(level, internal_h);
+                    }
+                    if ui
                         .add_sized(
                             [120.0 * ui_scale, 32.0 * ui_scale],
                             journey_ui::command_button("Back", false, ui_scale),
@@ -684,6 +807,10 @@ impl LevelEditor {
                             }
 
                             if changed {
+                                if !self.painting {
+                                    self.push_undo_state(self.text_buffer.clone());
+                                    self.painting = true;
+                                }
                                 self.text_buffer = lines.join("\n");
                                 //? Hot-reload in memory.
                                 level.reload_from_str(&self.text_buffer, internal_h);
@@ -694,9 +821,16 @@ impl LevelEditor {
 
                 //? Mouse click release saves to disk
                 if i.pointer.primary_released() || i.pointer.secondary_released() {
+                    self.painting = false;
                     self.save_and_reload(level, internal_h);
                 }
             });
         }
+
+        egui_ctx.input(|i| {
+            if i.pointer.primary_released() || i.pointer.secondary_released() {
+                self.painting = false;
+            }
+        });
     }
 }

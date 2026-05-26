@@ -11,7 +11,7 @@ use crate::config::*;
 use crate::enemy::EnemyHandle;
 use crate::entity::Entity;
 use crate::input::JourneyAction;
-use engine::{AABB, Vec2};
+use engine::{AABB, SpatialGrid, Vec2};
 
 const PROJECTILE_SIZE: f32 = 4.0; //* 4×4 pixel bullet
 pub const PROJECTILE_SPEED: f32 = 200.0; //* px/s   Grunt default
@@ -132,27 +132,36 @@ impl ProjectilePool {
             }
             let proj_aabb = proj.aabb();
             for wall in walls {
-                if proj_aabb.check_collision(wall) {
-                    if proj.bounces >= MAX_BOUNCES {
-                        proj.alive = false;
-                    } else {
-                        //? Reflect off the wall: determine which axis to flip
-                        //? by comparing overlap depths on each axis.
-                        let overlap_x = (proj_aabb.center.x - wall.center.x).abs()
-                            - (proj_aabb.size.x + wall.size.x) / 2.0;
-                        let overlap_y = (proj_aabb.center.y - wall.center.y).abs()
-                            - (proj_aabb.size.y + wall.size.y) / 2.0;
+                if collide_projectile_with_wall(proj, proj_aabb, wall, dt) {
+                    if proj.alive {
+                        bounce_count += 1;
+                    }
+                    break;
+                }
+            }
+        }
+        bounce_count
+    }
 
-                        if overlap_x > overlap_y {
-                            //* Shallower X overlap = hitting a vertical surface
-                            proj.velocity.x = -proj.velocity.x;
-                        } else {
-                            //* Shallower Y overlap = hitting a horizontal surface
-                            proj.velocity.y = -proj.velocity.y;
-                        }
-                        //? Nudge out of the wall to prevent double-bounce
-                        proj.position += proj.velocity * dt;
-                        proj.bounces += 1;
+    pub fn collide_walls_broadphase(
+        &mut self,
+        walls: &[AABB],
+        wall_grid: &mut SpatialGrid,
+        dt: f32,
+    ) -> u32 {
+        let mut bounce_count = 0u32;
+        for proj in &mut self.projectiles {
+            if !proj.alive {
+                continue;
+            }
+
+            let proj_aabb = proj.aabb();
+            for &wall_index in wall_grid.query(&proj_aabb) {
+                let Some(wall) = walls.get(wall_index) else {
+                    continue;
+                };
+                if collide_projectile_with_wall(proj, proj_aabb, wall, dt) {
+                    if proj.alive {
                         bounce_count += 1;
                     }
                     break;
@@ -204,6 +213,40 @@ impl ProjectilePool {
     pub fn alive_count(&self) -> usize {
         self.projectiles.iter().filter(|p| p.alive).count()
     }
+}
+
+fn collide_projectile_with_wall(
+    proj: &mut Projectile,
+    proj_aabb: AABB,
+    wall: &AABB,
+    dt: f32,
+) -> bool {
+    if !proj_aabb.check_collision(wall) {
+        return false;
+    }
+
+    if proj.bounces >= MAX_BOUNCES {
+        proj.alive = false;
+        return true;
+    }
+
+    //? Reflect off the wall by comparing overlap depths on each axis.
+    let overlap_x =
+        (proj_aabb.center.x - wall.center.x).abs() - (proj_aabb.size.x + wall.size.x) / 2.0;
+    let overlap_y =
+        (proj_aabb.center.y - wall.center.y).abs() - (proj_aabb.size.y + wall.size.y) / 2.0;
+
+    if overlap_x > overlap_y {
+        //* Shallower X overlap = hitting a vertical surface
+        proj.velocity.x = -proj.velocity.x;
+    } else {
+        //* Shallower Y overlap = hitting a horizontal surface
+        proj.velocity.y = -proj.velocity.y;
+    }
+    //? Nudge out of the wall to prevent double-bounce
+    proj.position += proj.velocity * dt;
+    proj.bounces += 1;
+    true
 }
 
 pub fn parry_aabb(entity: &Entity) -> AABB {
@@ -339,6 +382,31 @@ mod tests {
             vel_after
         );
     }
+
+    #[test]
+    fn broadphase_wall_collision_matches_direct_collision() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn(
+            Vec2::new(10.0, 10.0),
+            Vec2::new(20.0, 10.0),
+            handle(0),
+            200.0,
+            [1.0, 0.0, 0.0, 1.0],
+        );
+
+        let walls = [
+            AABB::new(Vec2::new(200.0, 200.0), Vec2::new(16.0, 16.0)),
+            AABB::new(Vec2::new(15.0, 10.0), Vec2::new(10.0, 10.0)),
+        ];
+        let mut grid = SpatialGrid::new(32.0);
+        grid.rebuild(&walls);
+
+        let bounces = pool.collide_walls_broadphase(&walls, &mut grid, 1.0 / 60.0);
+        assert_eq!(bounces, 1);
+        assert_eq!(pool.projectiles[0].bounces, 1);
+        assert!(pool.projectiles[0].velocity.x < 0.0);
+    }
+
     #[test]
     fn projectile_hits_player() {
         let mut pool = ProjectilePool::new();

@@ -11,7 +11,7 @@ use crate::config::{self, *};
 use crate::entity::{self, Entity};
 use crate::input::JourneyAction;
 use crate::projectile;
-use engine::{AABB, Vec2};
+use engine::{AABB, SpatialGrid, Vec2};
 
 //? Returned by `fixed_update` when an enemy fires a projectile.
 //? `lib.rs` processes this to call `projectiles.spawn()`.
@@ -181,6 +181,58 @@ impl Enemy {
         move_db: &MoveDatabase,
         tick_rate: u32,
     ) -> Option<ShootEvent> {
+        self.fixed_update_inner(
+            dt,
+            player_pos,
+            platforms,
+            walls,
+            None,
+            gravity,
+            max_fall_speed,
+            move_db,
+            tick_rate,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn fixed_update_broadphase_los(
+        &mut self,
+        dt: f32,
+        player_pos: Vec2,
+        platforms: &[AABB],
+        walls: &[AABB],
+        wall_grid: &mut SpatialGrid,
+        gravity: f32,
+        max_fall_speed: f32,
+        move_db: &MoveDatabase,
+        tick_rate: u32,
+    ) -> Option<ShootEvent> {
+        self.fixed_update_inner(
+            dt,
+            player_pos,
+            platforms,
+            walls,
+            Some(wall_grid),
+            gravity,
+            max_fall_speed,
+            move_db,
+            tick_rate,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn fixed_update_inner(
+        &mut self,
+        dt: f32,
+        player_pos: Vec2,
+        platforms: &[AABB],
+        walls: &[AABB],
+        wall_grid: Option<&mut SpatialGrid>,
+        gravity: f32,
+        max_fall_speed: f32,
+        move_db: &MoveDatabase,
+        tick_rate: u32,
+    ) -> Option<ShootEvent> {
         self.tick_rate = tick_rate;
         if self.state == EnemyState::Dead {
             self.death_flash_timer = self.death_flash_timer.saturating_sub(1);
@@ -188,7 +240,7 @@ impl Enemy {
         }
 
         //? Update AI state (needs platforms for ledge detection, walls for LOS)
-        let shoot_event = self.update_ai(player_pos, platforms, walls, move_db);
+        let shoot_event = self.update_ai(player_pos, platforms, walls, wall_grid, move_db);
 
         //? Advance combat FSM if in a move
         if !self.entity.combat.is_idle() {
@@ -222,6 +274,7 @@ impl Enemy {
         player_pos: Vec2,
         platforms: &[AABB],
         walls: &[AABB],
+        wall_grid: Option<&mut SpatialGrid>,
         move_db: &MoveDatabase,
     ) -> Option<ShootEvent> {
         let distance = (player_pos.x - self.entity.position.x).abs();
@@ -236,8 +289,17 @@ impl Enemy {
             EnemyState::Idle | EnemyState::Patrol { .. } => {
                 //? Check for aggro: in range + LOS clear
                 let in_range = distance < self.config.aggro_range;
-                let has_los =
-                    in_range && check_line_of_sight(self.entity.position, player_pos, walls);
+                let has_los = in_range
+                    && if let Some(grid) = wall_grid {
+                        check_line_of_sight_broadphase(
+                            self.entity.position,
+                            player_pos,
+                            walls,
+                            grid,
+                        )
+                    } else {
+                        check_line_of_sight(self.entity.position, player_pos, walls)
+                    };
 
                 if in_range && has_los {
                     //? Melee punish: player too close
@@ -426,6 +488,36 @@ pub fn check_line_of_sight(from: Vec2, to: Vec2, walls: &[AABB]) -> bool {
         for wall in walls {
             if probe.check_collision(wall) {
                 return false; //* Wall blocks LOS
+            }
+        }
+    }
+    true
+}
+
+pub fn check_line_of_sight_broadphase(
+    from: Vec2,
+    to: Vec2,
+    walls: &[AABB],
+    wall_grid: &mut SpatialGrid,
+) -> bool {
+    let diff = to - from;
+    let dist = diff.length();
+    if dist < 1.0 {
+        return true;
+    }
+    let steps = (dist / 4.0) as usize + 1;
+    let probe_size = Vec2::new(2.0, 2.0);
+
+    for i in 1..steps {
+        let t = i as f32 / steps as f32;
+        let point = from + diff * t;
+        let probe = AABB::new(point, probe_size);
+        for &wall_index in wall_grid.query(&probe) {
+            let Some(wall) = walls.get(wall_index) else {
+                continue;
+            };
+            if probe.check_collision(wall) {
+                return false;
             }
         }
     }
@@ -695,6 +787,23 @@ mod tests {
             Vec2::new(100.0, 180.0),
             Vec2::new(200.0, 180.0),
             &[], //* No walls
+        ));
+    }
+
+    #[test]
+    fn broadphase_los_matches_direct_los() {
+        let walls = [
+            AABB::new(Vec2::new(400.0, 180.0), Vec2::new(16.0, 32.0)),
+            AABB::new(Vec2::new(150.0, 180.0), Vec2::new(16.0, 32.0)),
+        ];
+        let mut grid = SpatialGrid::new(64.0);
+        grid.rebuild(&walls);
+
+        assert!(!check_line_of_sight_broadphase(
+            Vec2::new(100.0, 180.0),
+            Vec2::new(200.0, 180.0),
+            &walls,
+            &mut grid,
         ));
     }
 

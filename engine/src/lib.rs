@@ -35,7 +35,7 @@ pub use glam::{Vec2, Vec3, Vec4};
 pub use input::{GameAction, InputMap, InputState, Key, MouseBinding};
 pub use kira::sound::static_sound::StaticSoundData;
 pub use math::move_towards;
-pub use physics::{AABB, BoxVolume, CollisionLayer, SweepResult};
+pub use physics::{AABB, BoxVolume, CollisionLayer, SpatialGrid, SweepResult};
 pub use sprite::{BlendMode, Rect, RenderLayer};
 
 pub use egui;
@@ -79,12 +79,12 @@ impl Default for SkyParams {
     fn default() -> Self {
         Self {
             enabled: false,
-            horizon_glow: 0.35,
-            top_color: [0.41, 0.36, 0.81],
-            horizon_color: [0.67, 0.42, 0.85],
-            bottom_color: [0.25, 0.17, 0.44],
+            horizon_glow: 0.9,
+            top_color: [0.035, 0.09, 0.105],
+            horizon_color: [0.30, 0.24, 0.13],
+            bottom_color: [0.035, 0.055, 0.05],
             horizon_y: 0.66,
-            horizon_width: 0.24,
+            horizon_width: 0.36,
         }
     }
 }
@@ -168,14 +168,14 @@ pub struct SceneParams {
 impl Default for SceneParams {
     fn default() -> Self {
         Self {
-            background_color: [0.67, 0.42, 0.85], //* #AC6CDA
+            background_color: [0.035, 0.055, 0.05],
             sky: SkyParams::default(),
             seed: 42,
             fog_enabled: true,
-            fog_density: 10.0,
-            fog_opacity: 1.0,
-            fog_color: [0.41, 0.36, 0.81], //* #685DCE
-            fog_anim_speed: 0.5,
+            fog_density: 14.0,
+            fog_opacity: 0.55,
+            fog_color: [0.08, 0.18, 0.14],
+            fog_anim_speed: 0.35,
             time: 0.0,
         }
     }

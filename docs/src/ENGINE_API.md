@@ -1145,6 +1145,34 @@ pub struct SkyParams {
 
 `SkyParams` controls the gradient sky primitive. The engine defaults this on for Journey's game scene and options UI, replacing the older solid `background_color` path for normal gameplay. The old background color remains as a fallback for explicit overrides such as benchmark scenes.
 
+`SkyParams` also exposes a lerp method for transitions:
+
+```rust
+impl SkyParams {
+    pub fn lerp(&self, other: &SkyParams, t: f32) -> SkyParams;
+}
+```
+
+### SkyTransition
+
+```rust
+pub struct SkyTransition {
+    pub current: SkyParams,
+    pub target: SkyParams,
+    pub duration: f32,
+    pub elapsed: f32,
+}
+```
+
+A one-shot transition helper that interpolates from `current` to `target` sky over `duration` seconds.
+
+```rust
+let mut t = SkyTransition::new(day_sky, night_sky, 2.0);
+t.advance(dt);
+let params = t.lerp(); //* returns interpolated SkyParams at current progress
+if t.done() { /* transition complete */ }
+```
+
 ### SceneParams
 
 ```rust
@@ -1204,6 +1232,7 @@ pub use physics::{AABB, BoxVolume, CollisionLayer, SweepResult};
 pub use sprite::{BlendMode, Rect, RenderLayer};
 pub use BloomSettings;
 pub use SkyParams;
+pub use SkyTransition;
 pub use SceneParams;
 pub use animation::{AnimationDef, AnimationState};
 pub use texture::Texture;

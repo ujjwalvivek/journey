@@ -341,6 +341,22 @@ mod tests {
     }
 
     #[test]
+    fn test_fog_disabled_produces_transparent_fog_texture() {
+        let params = SceneParams {
+            fog_enabled: false,
+            ..Default::default()
+        };
+        let (w, h) = (4u32, 4u32);
+        let mut buf = vec![0u8; (w * h * 4) as usize];
+        let mut cache = None;
+        render_fog_to_buffer(&mut buf, w, h, &params, &mut cache);
+        assert!(
+            buf.chunks_exact(4).all(|px| px[3] == 0),
+            "All fog pixels should have alpha = 0 when fog is disabled"
+        );
+    }
+
+    #[test]
     fn test_fog_applies_over_sky() {
         let params = SceneParams {
             background_color: [1.0, 1.0, 1.0],

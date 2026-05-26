@@ -11,12 +11,49 @@ use engine::SceneParams;
 use engine::egui;
 use engine::{AudioResponse, UiAudioEvent, ui as journey_ui};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct GameScene {
     pub params: SceneParams,
     pub show_collision_box: bool,
     pub show_fps: bool,
     pub show_combat: bool,
+    pub day_night_cycle: bool,
+    pub day_night_phase: f32,
+}
+
+impl Default for GameScene {
+    fn default() -> Self {
+        Self {
+            params: SceneParams::default(),
+            show_collision_box: false,
+            show_fps: false,
+            show_combat: false,
+            day_night_cycle: false,
+            day_night_phase: 0.0,
+        }
+    }
+}
+
+impl GameScene {
+    pub fn night_sky() -> engine::SkyParams {
+        engine::SkyParams {
+            enabled: true,
+            horizon_glow: 0.08,
+            top_color: [0.01, 0.01, 0.06],
+            horizon_color: [0.04, 0.03, 0.12],
+            bottom_color: [0.005, 0.005, 0.02],
+            horizon_y: 0.45,
+            horizon_width: 0.12,
+        }
+    }
+
+    pub fn night_fog_color() -> [f32; 3] {
+        [0.05, 0.03, 0.15]
+    }
+
+    pub fn day_night_t(&self) -> f32 {
+        (1.0 - (self.day_night_phase * std::f32::consts::TAU).cos()) * 0.5
+    }
 }
 
 //? Bundled debug UI parameters to avoid too many function arguments.
@@ -174,6 +211,23 @@ pub fn show_ui(p: DebugUiParams<'_>) {
                     params.fog_density = 10.0;
                     params.fog_opacity = 1.0;
                     params.fog_anim_speed = 0.5;
+                }
+
+                ui.add_space(6.0);
+                {
+                    let r =
+                        journey_ui::toggle(ui, &mut scene.day_night_cycle, "Day/Night Cycle", scale);
+                    r.with_checkbox_sound(scene.day_night_cycle, pending_audio);
+                    if scene.day_night_cycle {
+                        let t = scene.day_night_t();
+                        let hours = (t * 24.0) as u32;
+                        let minutes = ((t * 24.0 % 1.0) * 60.0) as u32;
+                        ui.label(
+                            egui::RichText::new(format!("{hours:02}:{minutes:02}"))
+                                .font(egui::FontId::new(12.0, egui::FontFamily::Monospace))
+                                .color(theme.muted),
+                        );
+                    }
                 }
             }
 

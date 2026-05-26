@@ -89,6 +89,68 @@ impl Default for SkyParams {
     }
 }
 
+impl SkyParams {
+    pub fn lerp(&self, other: &SkyParams, t: f32) -> Self {
+        let t = t.clamp(0.0, 1.0);
+        Self {
+            enabled: self.enabled || other.enabled,
+            horizon_glow: lerp_f32(self.horizon_glow, other.horizon_glow, t),
+            top_color: lerp_color3(self.top_color, other.top_color, t),
+            horizon_color: lerp_color3(self.horizon_color, other.horizon_color, t),
+            bottom_color: lerp_color3(self.bottom_color, other.bottom_color, t),
+            horizon_y: lerp_f32(self.horizon_y, other.horizon_y, t),
+            horizon_width: lerp_f32(self.horizon_width, other.horizon_width, t),
+        }
+    }
+}
+
+fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
+    a * (1.0 - t) + b * t
+}
+
+fn lerp_color3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    [
+        lerp_f32(a[0], b[0], t),
+        lerp_f32(a[1], b[1], t),
+        lerp_f32(a[2], b[2], t),
+    ]
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SkyTransition {
+    pub current: SkyParams,
+    pub target: SkyParams,
+    pub duration: f32,
+    pub elapsed: f32,
+}
+
+impl SkyTransition {
+    pub fn new(current: SkyParams, target: SkyParams, duration: f32) -> Self {
+        Self {
+            current,
+            target,
+            duration: duration.max(0.001),
+            elapsed: 0.0,
+        }
+    }
+
+    pub fn progress(&self) -> f32 {
+        (self.elapsed / self.duration).clamp(0.0, 1.0)
+    }
+
+    pub fn advance(&mut self, dt: f32) {
+        self.elapsed = (self.elapsed + dt).min(self.duration);
+    }
+
+    pub fn lerp(&self) -> SkyParams {
+        self.current.lerp(&self.target, self.progress())
+    }
+
+    pub fn done(&self) -> bool {
+        self.elapsed >= self.duration
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneParams {
     pub background_color: [f32; 3],

@@ -870,6 +870,14 @@ impl GameApp for JourneyGame {
         //? Pixel-snap camera offsets to prevent sub-pixel jitter in the renderer
         ctx.camera_offset_x = cam_x.round();
         ctx.camera_offset_y = cam_y.round();
+
+        //? Day/night cycle phase advancement
+        if self.scene.day_night_cycle {
+            self.scene.day_night_phase += ctx.delta_time / 120.0;
+            if self.scene.day_night_phase >= 1.0 {
+                self.scene.day_night_phase -= 1.0;
+            }
+        }
     }
 
     //? Render the level and player
@@ -1203,6 +1211,21 @@ impl GameApp for JourneyGame {
                     show_physics_tuner_in_game: self.show_physics_tuner_in_game,
                     pending_audio: &mut engine_ctx.pending_ui_audio,
                 });
+
+                if self.scene.day_night_cycle {
+                    let t = self.scene.day_night_t();
+                    let night_sky = crate::scene::GameScene::night_sky();
+                    let night_fog = crate::scene::GameScene::night_fog_color();
+                    let day = engine::SceneParams::default();
+                    let mut cycle_params = params.clone();
+                    cycle_params.sky = day.sky.lerp(&night_sky, t);
+                    cycle_params.fog_color = [
+                        day.fog_color[0] * (1.0 - t) + night_fog[0] * t,
+                        day.fog_color[1] * (1.0 - t) + night_fog[1] * t,
+                        day.fog_color[2] * (1.0 - t) + night_fog[2] * t,
+                    ];
+                    engine_ctx.override_scene_params(cycle_params);
+                }
             }
         }
     }

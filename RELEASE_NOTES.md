@@ -1,9 +1,15 @@
-## Journey Engine v1.2.2 - Release Notes
+## Journey Engine v1.3.0 - Release Notes
 
-Focus on audio generation and WASM size.
+This update, focus was on raising the limits of the engine, whilst making it more performant and feature-rich.
 
-- Game crate now depends on `resonance` and `cadence` for sound generation.
-- Replaced large embedded tracks with procedural synth audio made using `resonance` and `cadence`. 
-- Added two new procedural soundtracks
-- WASM Size dropped from **32.8MB down to 4.2MB**
-- Added engine support for building StaticSoundData from generated mono samples.
+- Added engine benchmark sandbox with optional physics mode.
+- Raised sprite renderer capacity to 65,536 sprites.
+- Improved native render pacing under high-polling mouse movement upto 8k Hz.
+- Noise shader is now replaced with a sky/fog atmosphere system.
+- Sky transition helper is now available to simulate a day/night cycle.
+- Bloom post-processing is now supported.
+- Sprite render layer has been split into multiple layers with per-layer draw ordering.
+- Improved level rendering.
+- Moved towards a tunable camera system.
+- Added edge aware procedural tile visuals.
+- Level editor now supports undo/redo.

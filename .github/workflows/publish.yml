@@ -207,7 +207,6 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-          package-manager-cache: false
 
       - name: Check npm Version
         run: npm --version

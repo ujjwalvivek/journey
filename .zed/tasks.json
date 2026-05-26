@@ -1,6 +1,4 @@
-{
-  "version": "2.0.0",
-  "tasks": [
+[
   {
     "label": "Run Native (Debug)",
     "command": "cargo",
@@ -103,5 +101,4 @@
     "allow_concurrent_runs": false,
     "save": "all"
   }
-  ]
-}
+]

@@ -7,7 +7,7 @@
 use crate::GameApp;
 use crate::SceneParams;
 use crate::camera::Camera;
-use crate::context::Context;
+use crate::context::{Context, FrameStats};
 use crate::noise;
 use crate::sprite::SpriteRenderer;
 use crate::time::FixedTime;
@@ -33,6 +33,13 @@ const MIN_WIDTH: u32 = 320;
 const MIN_HEIGHT: u32 = 240;
 
 const NOISE_REGEN_INTERVAL: Duration = Duration::from_millis(16); //* ~60 Hz
+
+#[derive(Clone, Copy)]
+enum RenderPacing {
+    SleepToCap,
+    #[cfg(not(target_arch = "wasm32"))]
+    Immediate,
+}
 
 //? On WASM, async GPU init completes after `resumed` returns. The spawned
 //? future writes into this thread-local; the event handler picks it up on
@@ -127,7 +134,7 @@ impl<G: GameApp> ApplicationHandler for App<G> {
         {
             let mut state = pollster::block_on(EngineState::new(window));
             state.apply_display_mode();
-            let _ = state.render();
+            let _ = state.render(RenderPacing::SleepToCap);
             state.window.set_visible(true);
             self.state = Some(state);
         }
@@ -196,6 +203,29 @@ impl<G: GameApp> ApplicationHandler for App<G> {
             return;
         };
 
+        #[cfg(not(target_arch = "wasm32"))]
+        if matches!(event, WindowEvent::CursorMoved { .. }) {
+            state.pending_cursor_moved = Some(event);
+            if state.native_frame_due() {
+                match state.render(RenderPacing::Immediate) {
+                    Ok(()) => {}
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        let size = state.window.inner_size();
+                        state.resize(size);
+                    }
+                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                        log::error!("GPU out of memory, exiting");
+                        event_loop.exit();
+                    }
+                    Err(e) => log::warn!("Surface error: {e:?}"),
+                }
+            }
+            if state.context.request_exit {
+                event_loop.exit();
+            }
+            return;
+        }
+
         //? Always forward keyboard/mouse to game input BEFORE egui consumed check.
         match &event {
             WindowEvent::KeyboardInput {
@@ -248,19 +278,25 @@ impl<G: GameApp> ApplicationHandler for App<G> {
                 state.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                match state.render() {
-                    Ok(()) => {}
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        let size = state.window.inner_size();
-                        state.resize(size);
+                //? On native, rendering is driven from about_to_wait() to avoid
+                //? WM_PAINT priority starvation during aggressive cursor movement.
+                //? On WASM, RedrawRequested is driven by requestAnimationFrame
+                //? which is already decoupled from the DOM event queue.
+                #[cfg(target_arch = "wasm32")]
+                {
+                    match state.render(RenderPacing::SleepToCap) {
+                        Ok(()) => {}
+                        Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                            let size = state.window.inner_size();
+                            state.resize(size);
+                        }
+                        Err(wgpu::SurfaceError::OutOfMemory) => {
+                            log::error!("GPU out of memory, exiting");
+                            event_loop.exit();
+                        }
+                        Err(e) => log::warn!("Surface error: {e:?}"),
                     }
-                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                        log::error!("GPU out of memory, exiting");
-                        event_loop.exit();
-                    }
-                    Err(e) => log::warn!("Surface error: {e:?}"),
                 }
-                state.window.request_redraw();
             }
             _ => {}
         }
@@ -308,6 +344,35 @@ impl<G: GameApp> ApplicationHandler for App<G> {
                 }
             }
 
+            //? On native, render directly here after all pending events have been
+            //? drained. This bypasses WM_PAINT priority starvation that causes FPS
+            //? drops during aggressive cursor movement on Windows. WM_PAINT is the
+            //? lowest priority Win32 message and gets indefinitely delayed when
+            //? WM_MOUSEMOVE floods the queue.
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                if state.native_frame_due() {
+                    match state.render(RenderPacing::SleepToCap) {
+                        Ok(()) => {}
+                        Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                            let size = state.window.inner_size();
+                            state.resize(size);
+                        }
+                        Err(wgpu::SurfaceError::OutOfMemory) => {
+                            log::error!("GPU out of memory, exiting");
+                            _event_loop.exit();
+                        }
+                        Err(e) => log::warn!("Surface error: {e:?}"),
+                    }
+                }
+                if state.context.request_exit {
+                    _event_loop.exit();
+                }
+            }
+
+            //? Schedule next frame. On WASM this requests a requestAnimationFrame
+            //? callback. On native this posts WM_PAINT to keep the event loop awake
+            //? (the actual render already happened above, so RedrawRequested is a no-op).
             state.window.request_redraw();
         }
     }
@@ -345,6 +410,7 @@ struct EngineState<G: GameApp> {
     fixed_time: FixedTime,
     perlin_cache: Option<(u32, ::noise::Perlin)>,
     fps_samples: std::collections::VecDeque<f32>,
+    pending_cursor_moved: Option<WindowEvent>,
     #[allow(dead_code)] //* Kept alive - GPU bind group references the underlying TextureView
     offscreen_texture: wgpu::Texture,
     offscreen_view: wgpu::TextureView,
@@ -676,6 +742,7 @@ impl<G: GameApp> EngineState<G> {
             fixed_time: FixedTime::default(),
             perlin_cache,
             fps_samples: std::collections::VecDeque::with_capacity(120),
+            pending_cursor_moved: None,
             offscreen_texture,
             offscreen_view,
             blit_bind_group,
@@ -742,8 +809,29 @@ impl<G: GameApp> EngineState<G> {
         }
     }
 
+    fn flush_pending_cursor_moved(&mut self) {
+        if let Some(event) = self.pending_cursor_moved.take() {
+            let _ = self.egui_state.on_window_event(&self.window, &event);
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn native_frame_due(&self) -> bool {
+        if self.context.target_fps == 0 {
+            return true;
+        }
+
+        let target_frame_time = Duration::from_secs_f64(1.0 / self.context.target_fps as f64);
+        Instant::now().duration_since(self.last_frame) >= target_frame_time
+    }
+
     //? Main render loop: handle input, update game, regenerate noise if needed, and draw the frame.
-    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    fn render(&mut self, pacing: RenderPacing) -> Result<(), wgpu::SurfaceError> {
+        #[cfg(target_arch = "wasm32")]
+        let _ = pacing;
+
+        self.flush_pending_cursor_moved();
+
         let now = Instant::now();
         let raw_dt = (now - self.last_frame).as_secs_f32().min(0.1); //* cap at 100ms to prevent spiral of death
         self.last_frame = now;
@@ -766,6 +854,7 @@ impl<G: GameApp> EngineState<G> {
 
         //? Build the egui UI and detect discrete changes to scene parameters (excluding time).
         let mut params = self.params.clone();
+        self.context.scene_params_override = None;
         let mut raw_input = self.egui_state.take_egui_input(&self.window);
         let ppp = self.egui_ctx.pixels_per_point();
         raw_input.screen_rect = Some(egui::Rect::from_min_size(
@@ -776,6 +865,9 @@ impl<G: GameApp> EngineState<G> {
         let full_output = self.egui_ctx.run(raw_input, |egui_ctx| {
             crate::ui::apply_theme(egui_ctx);
             self.game.ui(egui_ctx, ctx, &mut params);
+            if ctx.show_perf_hud {
+                crate::ui::show_perf_hud(egui_ctx, ctx.perf());
+            }
         });
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -798,11 +890,26 @@ impl<G: GameApp> EngineState<G> {
             self.params.time += raw_dt;
         }
 
-        if ui_changed {
+        let render_params = self
+            .context
+            .scene_params_override
+            .clone()
+            .unwrap_or_else(|| self.params.clone());
+
+        let render_params_changed = render_params.background_color
+            != self.prev_params.background_color
+            || render_params.seed != self.prev_params.seed
+            || render_params.fog_enabled != self.prev_params.fog_enabled
+            || render_params.fog_density != self.prev_params.fog_density
+            || render_params.fog_opacity != self.prev_params.fog_opacity
+            || render_params.fog_color != self.prev_params.fog_color
+            || render_params.fog_anim_speed != self.prev_params.fog_anim_speed;
+
+        if ui_changed || render_params_changed {
             self.noise_dirty = true;
         }
 
-        let fog_animating = self.params.fog_enabled && self.params.fog_anim_speed > 0.0;
+        let fog_animating = render_params.fog_enabled && render_params.fog_anim_speed > 0.0;
         let regen_due = now.duration_since(self.last_noise_regen) >= NOISE_REGEN_INTERVAL;
 
         //? Dirty check: animations dont get interrupted by UI tweaks.
@@ -811,11 +918,11 @@ impl<G: GameApp> EngineState<G> {
                 &mut self.pixel_buffer,
                 SIM_WIDTH,
                 SIM_HEIGHT,
-                &self.params,
+                &render_params,
                 &mut self.perlin_cache,
             );
             upload_noise_texture(&self.queue, &self.noise_texture, &self.pixel_buffer);
-            self.prev_params = self.params.clone();
+            self.prev_params = render_params;
             self.noise_dirty = false;
             self.last_noise_regen = now;
         }
@@ -833,6 +940,7 @@ impl<G: GameApp> EngineState<G> {
 
         //? Fixed-timestep accumulator: run deterministic updates at FixedTime intervals
         let steps = self.fixed_time.accumulate(raw_dt);
+        let hit_fixed_step_cap = self.fixed_time.pending_steps() > self.fixed_time.max_steps();
         for _ in 0..steps {
             self.context.delta_time = self.fixed_time.fixed_dt;
             self.game.fixed_update(&mut self.context, &self.fixed_time);
@@ -846,8 +954,22 @@ impl<G: GameApp> EngineState<G> {
             self.fps_samples.pop_front();
         }
         let avg_dt = self.fps_samples.iter().sum::<f32>() / self.fps_samples.len() as f32;
-        self.context.fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
-        self.context.frame_time_ms = avg_dt * 1000.0;
+        let fps = if raw_dt > 0.0 { 1.0 / raw_dt } else { 0.0 };
+        let avg_fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
+        let frame_time_ms = raw_dt * 1000.0;
+        let avg_frame_time_ms = avg_dt * 1000.0;
+        self.context.fps = avg_fps;
+        self.context.frame_time_ms = avg_frame_time_ms;
+        self.context.set_perf(FrameStats {
+            fps,
+            avg_fps,
+            frame_time_ms,
+            avg_frame_time_ms,
+            fixed_steps: steps,
+            max_fixed_steps: self.fixed_time.max_steps(),
+            hit_fixed_step_cap,
+            fixed_debt_ms: self.fixed_time.accumulator_seconds().max(0.0) * 1000.0,
+        });
 
         //? Per-frame update with visual dt (camera smoothing, interpolation, etc.)
         self.context.delta_time = raw_dt;
@@ -1031,7 +1153,7 @@ impl<G: GameApp> EngineState<G> {
 
         //? Visual FPS limiter: sleep to cap frame rate if target_fps is set (native only)
         #[cfg(not(target_arch = "wasm32"))]
-        if self.context.target_fps > 0 {
+        if matches!(pacing, RenderPacing::SleepToCap) && self.context.target_fps > 0 {
             let target_frame_time =
                 std::time::Duration::from_secs_f64(1.0 / self.context.target_fps as f64);
             let elapsed = Instant::now() - now;

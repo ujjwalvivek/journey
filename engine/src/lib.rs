@@ -30,7 +30,7 @@ pub use audio::{
     sound_data_from_mono_samples,
 };
 pub use camera::ScreenShake;
-pub use context::Context;
+pub use context::{Context, FrameStats};
 pub use glam::{Vec2, Vec3, Vec4};
 pub use input::{GameAction, InputMap, InputState, Key, MouseBinding};
 pub use kira::sound::static_sound::StaticSoundData;

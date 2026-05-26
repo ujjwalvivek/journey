@@ -1,3 +1,4 @@
+use crate::SceneParams;
 /**----------------------------------------------------
 *!  Game context providing access to engine systems.
 *----------------------------------------------------**/
@@ -5,6 +6,33 @@ use crate::audio::{AudioManager, UiAudioEvent};
 use crate::input::{GameAction, InputState};
 use crate::sprite::{BlendMode, Rect, Sprite};
 use glam::Vec2;
+
+#[derive(Debug, Clone, Copy)]
+pub struct FrameStats {
+    pub fps: f32,
+    pub avg_fps: f32,
+    pub frame_time_ms: f32,
+    pub avg_frame_time_ms: f32,
+    pub fixed_steps: u32,
+    pub max_fixed_steps: u32,
+    pub hit_fixed_step_cap: bool,
+    pub fixed_debt_ms: f32,
+}
+
+impl Default for FrameStats {
+    fn default() -> Self {
+        Self {
+            fps: 0.0,
+            avg_fps: 0.0,
+            frame_time_ms: 0.0,
+            avg_frame_time_ms: 0.0,
+            fixed_steps: 0,
+            max_fixed_steps: crate::time::MAX_STEPS,
+            hit_fixed_step_cap: false,
+            fixed_debt_ms: 0.0,
+        }
+    }
+}
 
 //? This struct is passed to `GameApp` methods and provides:
 //? - Input state (keyboard, mouse, gamepad)
@@ -22,6 +50,8 @@ pub struct Context<A: GameAction> {
     pub camera_offset_y: f32,
     pub fps: f32,
     pub frame_time_ms: f32,
+    perf: FrameStats,
+    pub show_perf_hud: bool,
     pub fixed_tick_rate: u32,
     pub target_fps: u32,
     pub interpolation_alpha: f32,
@@ -34,6 +64,7 @@ pub struct Context<A: GameAction> {
     pub request_hdr: Option<bool>,
     pub audio: AudioManager,
     pub pending_ui_audio: Vec<UiAudioEvent>,
+    pub(crate) scene_params_override: Option<SceneParams>,
 
     //* pub(crate) - public only within the current crate
     //* Vec<T> - growable, heap-allocated array
@@ -61,6 +92,8 @@ impl<A: GameAction> Context<A> {
             camera_offset_y: 0.0,
             fps: 0.0,
             frame_time_ms: 0.0,
+            perf: FrameStats::default(),
+            show_perf_hud: true,
             fixed_tick_rate: crate::time::DEFAULT_FIXED_HZ,
             target_fps: 60, //* Default to 60 FPS target. can be changed by the game
             interpolation_alpha: 0.0,
@@ -74,7 +107,12 @@ impl<A: GameAction> Context<A> {
             request_hdr: None,
             audio: AudioManager::new(),
             pending_ui_audio: Vec::new(),
+            scene_params_override: None,
         }
+    }
+
+    pub fn override_scene_params(&mut self, params: SceneParams) {
+        self.scene_params_override = Some(params);
     }
 
     //? Queue a texture for loading. Called during `GameApp::init()`.
@@ -162,6 +200,26 @@ impl<A: GameAction> Context<A> {
 
     pub fn screen_center(&self) -> Vec2 {
         Vec2::new(self.screen_width / 2.0, self.screen_height / 2.0)
+    }
+
+    pub fn fps(&self) -> f32 {
+        self.perf.fps
+    }
+
+    pub fn average_fps(&self) -> f32 {
+        self.perf.avg_fps
+    }
+
+    pub fn frame_time_ms(&self) -> f32 {
+        self.perf.frame_time_ms
+    }
+
+    pub fn perf(&self) -> FrameStats {
+        self.perf
+    }
+
+    pub(crate) fn set_perf(&mut self, stats: FrameStats) {
+        self.perf = stats;
     }
 
     //? Deduplicate UI audio events queued during this frame.

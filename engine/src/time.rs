@@ -39,7 +39,7 @@ impl FixedTime {
             return 0;
         }
         self.accumulator += dt;
-        (self.accumulator / self.fixed_dt).min(MAX_STEPS as f32) as u32
+        self.pending_steps().min(MAX_STEPS)
     }
 
     //? Call this once per fixed_update invocation.
@@ -51,11 +51,23 @@ impl FixedTime {
     //? Fraction of a fixed step remaining after all whole steps have been consumed.
     //? Useful for render-time interpolation between physics states.
     pub fn interpolation_alpha(&self) -> f32 {
-        self.accumulator / self.fixed_dt
+        (self.accumulator / self.fixed_dt).clamp(0.0, 1.0)
     }
 
     pub fn tick_rate(&self) -> u32 {
         self.tick_rate
+    }
+
+    pub fn max_steps(&self) -> u32 {
+        MAX_STEPS
+    }
+
+    pub fn pending_steps(&self) -> u32 {
+        (self.accumulator / self.fixed_dt) as u32
+    }
+
+    pub fn accumulator_seconds(&self) -> f32 {
+        self.accumulator
     }
 
     pub fn set_tick_rate(&mut self, hz: u32) {

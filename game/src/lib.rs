@@ -4,6 +4,7 @@
 pub mod anim;
 pub mod assets;
 pub mod audio;
+mod benchmark;
 pub mod combat;
 pub mod config;
 pub mod enemy;
@@ -15,6 +16,7 @@ pub mod player;
 pub mod projectile;
 use assets::PlayerAnimations;
 use audio::{AudioAssets, AudioEvent};
+use benchmark::BenchmarkState;
 use combat::moves::MoveDatabase;
 use config::PhysicsConfig;
 use enemy::Enemy;
@@ -67,6 +69,7 @@ pub enum GameState {
     LevelEditor {
         return_state: MenuReturnState,
     },
+    Benchmark,
     InGame,
     Paused,
 }
@@ -96,6 +99,7 @@ pub struct JourneyGame {
     pending_target_fps: u32,
     death_respawn_timer: u32, //* 0 = Godmode, >0 = counting down to respawn
     pub(crate) level_editor: LevelEditor,
+    benchmark: BenchmarkState,
     vfx_bursts: Vec<VfxBurst>,
     using_gamepad: bool,
     menu_index: usize,
@@ -170,7 +174,8 @@ impl JourneyGame {
                 return_state: MenuReturnState::StartMenu,
                 ..
             }
-            | GameState::LevelEditor { .. } => AudioMusicState::StartScreen,
+            | GameState::LevelEditor { .. }
+            | GameState::Benchmark => AudioMusicState::StartScreen,
             GameState::InGame | GameState::Paused | GameState::Options { .. } => {
                 AudioMusicState::InGame
             }
@@ -343,6 +348,7 @@ impl GameApp for JourneyGame {
             pending_target_fps: ctx.target_fps,
             death_respawn_timer: 0,
             level_editor: LevelEditor::new(),
+            benchmark: BenchmarkState::new(),
             vfx_bursts: Vec::new(),
             using_gamepad: false,
             menu_index: 0,
@@ -358,12 +364,18 @@ impl GameApp for JourneyGame {
     }
 
     fn fixed_update(&mut self, ctx: &mut Context<JourneyAction>, fixed_time: &FixedTime) {
+        if self.state == GameState::Benchmark {
+            self.benchmark.fixed_update(ctx, fixed_time);
+            return;
+        }
+
         //? State Machine Handling
         match self.state {
             GameState::Splash { .. }
             | GameState::StartMenu { .. }
             | GameState::Options { .. }
-            | GameState::Paused => return,
+            | GameState::Paused
+            | GameState::Benchmark => return,
             GameState::LevelEditor { .. } | GameState::InGame => {}
         }
 
@@ -704,6 +716,14 @@ impl GameApp for JourneyGame {
                     };
                     return;
                 }
+                GameState::Benchmark => {
+                    ctx.target_fps = self.pending_target_fps;
+                    self.menu_index = 0;
+                    self.state = GameState::StartMenu {
+                        animation_progress: 1.0,
+                    };
+                    return;
+                }
                 _ => {}
             }
         }
@@ -749,6 +769,10 @@ impl GameApp for JourneyGame {
                 return;
             }
             GameState::Options { .. } | GameState::Paused => return,
+            GameState::Benchmark => {
+                self.benchmark.update(ctx);
+                return;
+            }
             GameState::LevelEditor { .. } | GameState::InGame => {}
         }
 
@@ -850,6 +874,11 @@ impl GameApp for JourneyGame {
 
     //? Render the level and player
     fn render(&mut self, ctx: &mut Context<JourneyAction>) {
+        if self.state == GameState::Benchmark {
+            self.benchmark.render(ctx);
+            return;
+        }
+
         if matches!(
             self.state,
             GameState::Splash { .. } | GameState::StartMenu { .. }
@@ -1124,6 +1153,13 @@ impl GameApp for JourneyGame {
                 if self.level_editor.take_close_request() {
                     self.close_level_editor(return_state);
                 }
+            }
+            GameState::Benchmark => {
+                let mut benchmark_params = params.clone();
+                benchmark_params.background_color = [5.0 / 255.0, 5.0 / 255.0, 6.0 / 255.0];
+                benchmark_params.fog_enabled = false;
+                engine_ctx.override_scene_params(benchmark_params);
+                self.benchmark.ui(ctx, engine_ctx);
             }
             GameState::InGame => {
                 crate::scene::show_ui(crate::scene::DebugUiParams {

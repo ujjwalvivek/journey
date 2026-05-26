@@ -177,6 +177,7 @@ State transitions drive music changes, input routing, and UI visibility. The spl
 ### Entity-Component Pattern
 
 All actors (player, enemies) share an `Entity` struct containing:
+
 - Position and velocity (`Vec2`)
 - Facing direction
 - Pushbox and hurtbox sizes (`AABB`)
@@ -239,7 +240,7 @@ Each Frame:
 ├─────────────────────────────────────────────┤
 │     Instanced Sprite Pass (640×360)         │
 │   Alpha pipeline → Additive pipeline        │
-│   Batched by texture_id, up to 1024 sprites │
+│   Batched by texture_id, for 65,536 sprites │
 ├─────────────────────────────────────────────┤
 │           egui Overlay Pass                 │
 │   Debug UI, menus, HUD                      │
@@ -251,6 +252,7 @@ Each Frame:
 Sprites are submitted via `ctx.draw_sprite()` and `ctx.draw_sprite_from_sheet()` during `render()`. They are collected into a `Vec<Sprite>`, sorted by texture ID, converted to `SpriteInstance` GPU data, and rendered with instanced draw calls.
 
 Two render pipelines exist within the same render pass:
+
 - **Alpha blend** (default): Standard transparency
 - **Additive blend**: For effects like hit flashes and glow
 
@@ -259,6 +261,7 @@ Horizontal sprite flipping is done in UV-space (not scale-space) to eliminate an
 ### Camera
 
 An orthographic camera maps pixel coordinates to NDC space. It supports:
+
 - Horizontal and vertical panning (camera follow)
 - Additive screen shakes with exponential decay and Lissajous-like orbits
 - Resize handling for window/canvas changes
@@ -277,6 +280,7 @@ let box_b = AABB::from_top_left(top_left, size);
 ```
 
 Operations:
+
 - `check_collision()`: Boolean overlap test
 - `get_overlap()`: Overlap amount per axis
 - `resolve_collision()`: Minimum translation vector (MTV) to separate two boxes
@@ -475,6 +479,7 @@ Levels are defined as ASCII strings where each character maps to a game element:
 ### Level Editor
 
 Press `F12` to toggle a full-screen dual-mode editor operating on a canonical ASCII string. Features:
+
 - Live minimap with color-coded elements
 - Validation pass warning on missing elements
 - Universal persistence: `world.txt` on native, `localStorage` on WASM
@@ -536,7 +541,7 @@ Key platform differences:
 | ------------------- | ---------------------------------------------------------------------- |
 | Frame rate          | 60 FPS stable (native + browser)                                       |
 | WASM binary         | < 5 MB (gzip)                                                          |
-| Sprite cap          | 1024 instanced sprites per frame                                       |
+| Sprite cap          | 65,536 instanced sprites per frame                                     |
 | Physics steps       | Max 5 per frame (spiral-of-death cap)                                  |
 | Noise resolution    | 32×32 CPU pass at ~60Hz                                                |
 | Internal resolution | Default 640×360 (configurable via `GameApp`), nearest-neighbor upscale |

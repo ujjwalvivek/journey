@@ -627,7 +627,7 @@ ctx.draw_sprite_from_sheet_additive(pos, size, color, source_rect, flip_x, textu
 
 ### Rendering Details
 
-- Up to **1024 sprites** per frame (instanced rendering)
+- Up to **65_536 sprites** per frame (instanced rendering)
 - Sprites are batched by `texture_id` for minimal GPU state changes
 - Two render pipelines: alpha blend (default) and additive blend
 - Horizontal flipping is done in UV-space, avoiding anchor-offset artifacts

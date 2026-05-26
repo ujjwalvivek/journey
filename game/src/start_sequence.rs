@@ -129,9 +129,9 @@ impl JourneyGame {
 
                 if btn_alpha > 0.0 {
                     #[cfg(not(target_arch = "wasm32"))]
-                    let menu_count: usize = 4;
+                    let menu_count: usize = 5;
                     #[cfg(target_arch = "wasm32")]
-                    let menu_count: usize = 4;
+                    let menu_count: usize = 5;
 
                     if engine_ctx
                         .input
@@ -181,6 +181,18 @@ impl JourneyGame {
                                     .with_ui_sound(&mut engine_ctx.pending_ui_audio);
                                 if r.clicked() || (self.menu_index == idx && confirmed) {
                                     self.state = GameState::InGame;
+                                }
+                                idx += 1;
+                                ui.add_space(spacing);
+
+                                let r = ui
+                                    .add_sized(
+                                        [btn_w, btn_h],
+                                        menu_btn("Benchmark", self.menu_index == idx),
+                                    )
+                                    .with_ui_sound(&mut engine_ctx.pending_ui_audio);
+                                if r.clicked() || (self.menu_index == idx && confirmed) {
+                                    self.state = GameState::Benchmark;
                                 }
                                 idx += 1;
                                 ui.add_space(spacing);

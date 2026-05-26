@@ -4,6 +4,8 @@ use egui::{
 };
 use std::ops::RangeInclusive;
 
+use crate::context::FrameStats;
+
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
     pub bg: Color32,
@@ -89,6 +91,63 @@ pub fn apply_theme(ctx: &Context) {
         .text_styles
         .insert(TextStyle::Small, FontId::new(12.0, FontFamily::Monospace));
     ctx.set_style(style);
+}
+
+pub fn show_perf_hud(ctx: &Context, stats: FrameStats) {
+    let t = theme();
+    egui::Area::new(Id::new("engine_perf_hud"))
+        .anchor(Align2::RIGHT_TOP, [-8.0, 8.0])
+        .interactable(false)
+        .show(ctx, |ui| {
+            Frame::NONE
+                .fill(Color32::from_rgba_unmultiplied(
+                    t.bg_deep.r(),
+                    t.bg_deep.g(),
+                    t.bg_deep.b(),
+                    210,
+                ))
+                .stroke(Stroke::new(1.0, t.stroke_soft))
+                .inner_margin(Margin::same(8))
+                .corner_radius(0.0)
+                .show(ui, |ui| {
+                    ui.set_min_width(138.0);
+                    ui.label(command_label("ENGINE", 11.0));
+                    key_value(ui, "FPS", format!("{:.1}", stats.fps), 1.0);
+                    key_value(ui, "AVG", format!("{:.1}", stats.avg_fps), 1.0);
+                    key_value(ui, "FRAME", format!("{:.2} ms", stats.frame_time_ms), 1.0);
+                    key_value(
+                        ui,
+                        "FIXED",
+                        format!("{}/{}", stats.fixed_steps, stats.max_fixed_steps),
+                        1.0,
+                    );
+                    let debt = format!("{:.2} ms", stats.fixed_debt_ms);
+                    let label = if stats.hit_fixed_step_cap {
+                        RichText::new("DEBT")
+                            .font(FontId::new(12.0, FontFamily::Monospace))
+                            .color(t.accent)
+                    } else {
+                        RichText::new("DEBT")
+                            .font(FontId::new(12.0, FontFamily::Monospace))
+                            .color(t.muted)
+                    };
+                    ui.horizontal(|ui| {
+                        ui.label(label);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                RichText::new(debt)
+                                    .font(FontId::new(12.0, FontFamily::Monospace))
+                                    .strong()
+                                    .color(if stats.hit_fixed_step_cap {
+                                        t.accent
+                                    } else {
+                                        t.text
+                                    }),
+                            );
+                        });
+                    });
+                });
+        });
 }
 
 pub fn paint_screen(ctx: &Context, id: impl std::hash::Hash, rect: Rect) {

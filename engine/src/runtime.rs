@@ -1,21 +1,23 @@
 /**--------------------------------------------------------------------------------
 *!  Cross-platform engine runtime and wGPU rendering loop with egui overlay.
 *?  Handles both native (desktop) and WASM (web) targets. The core rendering
-*?  pipeline (CPU noise → GPU texture → full-screen quad + egui overlay) is
+*?  pipeline (CPU atmosphere → GPU textures → full-screen quad + egui overlay) is
 *?  shared; only event-loop bootstrap and async GPU initialization differ.
 *--------------------------------------------------------------------------------**/
 use crate::GameApp;
-use crate::SceneParams;
+use crate::atmosphere;
 use crate::camera::Camera;
 use crate::context::{Context, FrameStats};
-use crate::noise;
 use crate::sprite::SpriteRenderer;
 use crate::time::FixedTime;
+use crate::{BloomSettings, SceneParams};
+use bytemuck::{Pod, Zeroable};
 use egui_wgpu::ScreenDescriptor;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Duration;
 use web_time::Instant;
+use wgpu::util::DeviceExt;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -23,7 +25,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::Fullscreen;
 use winit::window::{Window, WindowAttributes, WindowId};
 
-//? Internal simulation resolution decoupled from the actual window/canvas size, CPU noise pass stays cheap.
+//? Internal simulation resolution decoupled from the actual window/canvas size, CPU atmosphere pass stays cheap.
 //* Upscaled with nearest-neighbor filtering for a retro pixelated look.
 const SIM_WIDTH: u32 = 32;
 const SIM_HEIGHT: u32 = 32;
@@ -32,7 +34,26 @@ const SIM_HEIGHT: u32 = 32;
 const MIN_WIDTH: u32 = 320;
 const MIN_HEIGHT: u32 = 240;
 
-const NOISE_REGEN_INTERVAL: Duration = Duration::from_millis(16); //* ~60 Hz
+const ATMOSPHERE_REGEN_INTERVAL: Duration = Duration::from_millis(16); //* ~60 Hz
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct BloomUniform {
+    enabled_threshold_intensity_radius: [f32; 4],
+}
+
+impl From<BloomSettings> for BloomUniform {
+    fn from(settings: BloomSettings) -> Self {
+        Self {
+            enabled_threshold_intensity_radius: [
+                if settings.enabled { 1.0 } else { 0.0 },
+                settings.threshold.clamp(0.0, 0.99),
+                settings.intensity.max(0.0),
+                settings.radius.clamp(1.0, 8.0),
+            ],
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 enum RenderPacing {
@@ -374,6 +395,18 @@ impl<G: GameApp> ApplicationHandler for App<G> {
             //? callback. On native this posts WM_PAINT to keep the event loop awake
             //? (the actual render already happened above, so RedrawRequested is a no-op).
             state.window.request_redraw();
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                if state.context.target_fps > 0 {
+                    let target_frame_time =
+                        std::time::Duration::from_secs_f64(1.0 / state.context.target_fps as f64);
+                    _event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                        std::time::Instant::now() + target_frame_time,
+                    ));
+                } else {
+                    _event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+                }
+            }
         }
     }
 }
@@ -386,9 +419,14 @@ struct EngineState<G: GameApp> {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
-    noise_texture: wgpu::Texture,
-    bind_group: wgpu::BindGroup,
-    pixel_buffer: Vec<u8>,
+    bloom_pipeline: wgpu::RenderPipeline,
+    bloom_uniform_buffer: wgpu::Buffer,
+    bloom_bind_group: wgpu::BindGroup,
+    sky_texture: wgpu::Texture,
+    fog_texture: wgpu::Texture,
+    atmosphere_bind_group: wgpu::BindGroup,
+    sky_buffer: Vec<u8>,
+    fog_buffer: Vec<u8>,
     egui_ctx: egui::Context,
     egui_state: egui_winit::State,
     egui_renderer: egui_wgpu::Renderer,
@@ -403,12 +441,12 @@ struct EngineState<G: GameApp> {
     params: SceneParams,
     prev_params: SceneParams,
     last_frame: Instant,
-    last_noise_regen: Instant,
-    noise_dirty: bool,
+    last_atmosphere_regen: Instant,
+    atmosphere_dirty: bool,
     scale_factor: f64,
     render_format: wgpu::TextureFormat,
     fixed_time: FixedTime,
-    perlin_cache: Option<(u32, ::noise::Perlin)>,
+    atmosphere_noise_cache: Option<(u32, ::noise::Perlin)>,
     fps_samples: std::collections::VecDeque<f32>,
     pending_cursor_moved: Option<WindowEvent>,
     #[allow(dead_code)] //* Kept alive - GPU bind group references the underlying TextureView
@@ -420,7 +458,7 @@ struct EngineState<G: GameApp> {
 }
 
 //? Core engine state initialization:
-//? Async GPU setup, resource creation, game init, initial noise bake.
+//? Async GPU setup, resource creation, game init, initial atmosphere bake.
 impl<G: GameApp> EngineState<G> {
     async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
@@ -482,10 +520,24 @@ impl<G: GameApp> EngineState<G> {
         };
         surface.configure(&device, &config);
 
-        //? Create the noise texture and sampler.
-        //* Nearest neighbor filtering preserves hard pixel edges for retro aesthetic.
-        let noise_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Noise Texture"),
+        //? Create separate sky and fog textures at the fixed atmosphere resolution.
+        //* Sky is sampled linearly for blended gradients. Fog is sampled nearest for chunky retro fog.
+        let sky_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Sky Texture"),
+            size: wgpu::Extent3d {
+                width: SIM_WIDTH,
+                height: SIM_HEIGHT,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let fog_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Fog Texture"),
             size: wgpu::Extent3d {
                 width: SIM_WIDTH,
                 height: SIM_HEIGHT,
@@ -499,8 +551,17 @@ impl<G: GameApp> EngineState<G> {
             view_formats: &[],
         });
 
-        let texture_view = noise_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        let sky_texture_view = sky_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let fog_texture_view = fog_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sky_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let fog_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Nearest,
@@ -509,7 +570,70 @@ impl<G: GameApp> EngineState<G> {
             ..Default::default()
         });
 
-        //? Create a bind group layout for the noise texture and sampler.
+        //? Create a bind group layout for sky/fog atmosphere composition.
+        let atmosphere_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Atmosphere Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let atmosphere_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Atmosphere Bind Group"),
+            layout: &atmosphere_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&sky_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sky_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&fog_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&fog_sampler),
+                },
+            ],
+        });
+
+        //? Create a single-texture bind group layout for final blits.
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Texture Bind Group Layout"),
             entries: &[
@@ -532,24 +656,8 @@ impl<G: GameApp> EngineState<G> {
             ],
         });
 
-        //? Create a bind group for the noise texture and sampler.
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Noise Bind Group"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
-
         //? Create offscreen render target at internal resolution.
-        //? All game passes (noise + sprites) render here blitted to surface with nearest-neighbor.
+        //? All game passes (atmosphere + sprites) render here blitted to surface with nearest-neighbor.
         let (internal_w, internal_h) = G::internal_resolution();
         let offscreen_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Offscreen Render Target"),
@@ -591,18 +699,58 @@ impl<G: GameApp> EngineState<G> {
             ],
         });
 
-        //? Create the render pipeline for drawing the full-screen quad with the noise texture.
+        //? Create the render pipeline for drawing the full-screen quad with atmosphere textures.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Fullscreen Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../assets/shaders/shader.wgsl").into()),
         });
+        let bloom_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Bloom Blit Shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("../assets/shaders/shader_bloom.wgsl").into(),
+            ),
+        });
 
-        //? Create a pipeline layout that includes the bind group layout for the noise texture.
+        let bloom_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Bloom Uniform Buffer"),
+            contents: bytemuck::bytes_of(&BloomUniform::from(BloomSettings::default())),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let bloom_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Bloom Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let bloom_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Bloom Bind Group"),
+            layout: &bloom_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: bloom_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        //? Create a pipeline layout that includes the sky/fog atmosphere bind group.
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[&atmosphere_bind_group_layout],
             push_constant_ranges: &[],
         });
+        let bloom_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Bloom Pipeline Layout"),
+                bind_group_layouts: &[&bind_group_layout, &bloom_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         //? Finally, create the render pipeline with the shader, pipeline layout, and surface format.
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -616,6 +764,34 @@ impl<G: GameApp> EngineState<G> {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: render_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+        let bloom_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Bloom Blit Pipeline"),
+            layout: Some(&bloom_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &bloom_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &bloom_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: render_format,
@@ -698,18 +874,21 @@ impl<G: GameApp> EngineState<G> {
         }
         context.pending_textures.clear();
 
-        //? Initial noise bake to populate the texture before the first frame renders.
+        //? Initial atmosphere bake to populate textures before the first frame renders.
         let params = SceneParams::default();
-        let mut pixel_buffer = vec![0u8; (SIM_WIDTH * SIM_HEIGHT * 4) as usize];
-        let mut perlin_cache = None;
-        noise::render_scene_to_buffer(
-            &mut pixel_buffer,
+        let mut sky_buffer = vec![0u8; (SIM_WIDTH * SIM_HEIGHT * 4) as usize];
+        let mut fog_buffer = vec![0u8; (SIM_WIDTH * SIM_HEIGHT * 4) as usize];
+        let mut atmosphere_noise_cache = None;
+        atmosphere::render_sky_to_buffer(&mut sky_buffer, SIM_WIDTH, SIM_HEIGHT, &params);
+        atmosphere::render_fog_to_buffer(
+            &mut fog_buffer,
             SIM_WIDTH,
             SIM_HEIGHT,
             &params,
-            &mut perlin_cache,
+            &mut atmosphere_noise_cache,
         );
-        upload_noise_texture(&queue, &noise_texture, &pixel_buffer);
+        upload_atmosphere_texture(&queue, &sky_texture, &sky_buffer);
+        upload_atmosphere_texture(&queue, &fog_texture, &fog_buffer);
 
         Self {
             window,
@@ -718,9 +897,14 @@ impl<G: GameApp> EngineState<G> {
             queue,
             config,
             pipeline,
-            noise_texture,
-            bind_group,
-            pixel_buffer,
+            bloom_pipeline,
+            bloom_uniform_buffer,
+            bloom_bind_group,
+            sky_texture,
+            fog_texture,
+            atmosphere_bind_group,
+            sky_buffer,
+            fog_buffer,
             egui_ctx,
             egui_state,
             egui_renderer,
@@ -735,12 +919,12 @@ impl<G: GameApp> EngineState<G> {
             prev_params: params.clone(),
             params,
             last_frame: Instant::now(),
-            last_noise_regen: Instant::now(),
-            noise_dirty: false,
+            last_atmosphere_regen: Instant::now(),
+            atmosphere_dirty: false,
             scale_factor,
             render_format,
             fixed_time: FixedTime::default(),
-            perlin_cache,
+            atmosphere_noise_cache,
             fps_samples: std::collections::VecDeque::with_capacity(120),
             pending_cursor_moved: None,
             offscreen_texture,
@@ -825,7 +1009,7 @@ impl<G: GameApp> EngineState<G> {
         Instant::now().duration_since(self.last_frame) >= target_frame_time
     }
 
-    //? Main render loop: handle input, update game, regenerate noise if needed, and draw the frame.
+    //? Main render loop: handle input, update game, regenerate atmosphere if needed, and draw the frame.
     fn render(&mut self, pacing: RenderPacing) -> Result<(), wgpu::SurfaceError> {
         #[cfg(target_arch = "wasm32")]
         let _ = pacing;
@@ -855,6 +1039,7 @@ impl<G: GameApp> EngineState<G> {
         //? Build the egui UI and detect discrete changes to scene parameters (excluding time).
         let mut params = self.params.clone();
         self.context.scene_params_override = None;
+        self.context.bloom_override = None;
         let mut raw_input = self.egui_state.take_egui_input(&self.window);
         let ppp = self.egui_ctx.pixels_per_point();
         raw_input.screen_rect = Some(egui::Rect::from_min_size(
@@ -874,6 +1059,7 @@ impl<G: GameApp> EngineState<G> {
         self.apply_requested_display_changes();
 
         let ui_changed = params.background_color != self.params.background_color
+            || params.sky != self.params.sky
             || params.seed != self.params.seed
             || params.fog_enabled != self.params.fog_enabled
             || params.fog_density != self.params.fog_density
@@ -898,6 +1084,7 @@ impl<G: GameApp> EngineState<G> {
 
         let render_params_changed = render_params.background_color
             != self.prev_params.background_color
+            || render_params.sky != self.prev_params.sky
             || render_params.seed != self.prev_params.seed
             || render_params.fog_enabled != self.prev_params.fog_enabled
             || render_params.fog_density != self.prev_params.fog_density
@@ -906,25 +1093,32 @@ impl<G: GameApp> EngineState<G> {
             || render_params.fog_anim_speed != self.prev_params.fog_anim_speed;
 
         if ui_changed || render_params_changed {
-            self.noise_dirty = true;
+            self.atmosphere_dirty = true;
         }
 
         let fog_animating = render_params.fog_enabled && render_params.fog_anim_speed > 0.0;
-        let regen_due = now.duration_since(self.last_noise_regen) >= NOISE_REGEN_INTERVAL;
+        let regen_due = now.duration_since(self.last_atmosphere_regen) >= ATMOSPHERE_REGEN_INTERVAL;
 
         //? Dirty check: animations dont get interrupted by UI tweaks.
-        if self.noise_dirty || (fog_animating && regen_due) {
-            noise::render_scene_to_buffer(
-                &mut self.pixel_buffer,
+        if self.atmosphere_dirty || (fog_animating && regen_due) {
+            atmosphere::render_sky_to_buffer(
+                &mut self.sky_buffer,
                 SIM_WIDTH,
                 SIM_HEIGHT,
                 &render_params,
-                &mut self.perlin_cache,
             );
-            upload_noise_texture(&self.queue, &self.noise_texture, &self.pixel_buffer);
+            atmosphere::render_fog_to_buffer(
+                &mut self.fog_buffer,
+                SIM_WIDTH,
+                SIM_HEIGHT,
+                &render_params,
+                &mut self.atmosphere_noise_cache,
+            );
+            upload_atmosphere_texture(&self.queue, &self.sky_texture, &self.sky_buffer);
+            upload_atmosphere_texture(&self.queue, &self.fog_texture, &self.fog_buffer);
             self.prev_params = render_params;
-            self.noise_dirty = false;
-            self.last_noise_regen = now;
+            self.atmosphere_dirty = false;
+            self.last_atmosphere_regen = now;
         }
 
         //? Sync tick rate if the game changed it via debug UI.
@@ -996,6 +1190,13 @@ impl<G: GameApp> EngineState<G> {
         self.sprite_renderer
             .prepare(&self.queue, &self.context.sprite_batch, &self.texture_sizes);
 
+        let bloom_settings = self.context.bloom_override.unwrap_or(self.context.bloom);
+        self.queue.write_buffer(
+            &self.bloom_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&BloomUniform::from(bloom_settings)),
+        );
+
         //? Tessellate egui shapes into GPU primitives,
         //? using the same pixels_per_point for correct scaling on high-DPI displays.
         let clipped_primitives = self
@@ -1014,7 +1215,7 @@ impl<G: GameApp> EngineState<G> {
         }
 
         //? Begin encoding commands for the frame.
-        //* Multiple render passes: one for the full-screen noise quad, one for the sprites, and one for the egui overlay.
+        //* Multiple render passes: one for the full-screen atmosphere quad, one for the sprites, and one for the egui overlay.
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1036,7 +1237,7 @@ impl<G: GameApp> EngineState<G> {
             ..Default::default()
         });
 
-        //? Pass 1: full-screen quad with noise texture → offscreen buffer
+        //? Pass 1: full-screen quad with atmosphere textures → offscreen buffer
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("World Pass"),
@@ -1054,7 +1255,7 @@ impl<G: GameApp> EngineState<G> {
                 occlusion_query_set: None,
             });
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_bind_group(0, &self.atmosphere_bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
 
@@ -1098,8 +1299,9 @@ impl<G: GameApp> EngineState<G> {
                 occlusion_query_set: None,
             });
             pass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
-            pass.set_pipeline(&self.pipeline);
+            pass.set_pipeline(&self.bloom_pipeline);
             pass.set_bind_group(0, &self.blit_bind_group, &[]);
+            pass.set_bind_group(1, &self.bloom_bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
 
@@ -1202,7 +1404,7 @@ fn sync_canvas_backing_buffer(canvas: &web_sys::HtmlCanvasElement) {
     }
 }
 
-fn upload_noise_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, data: &[u8]) {
+fn upload_atmosphere_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, data: &[u8]) {
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture,

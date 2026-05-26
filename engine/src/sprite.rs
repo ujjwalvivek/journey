@@ -23,6 +23,24 @@ pub enum BlendMode {
     Additive,
 }
 
+impl BlendMode {
+    const DRAW_ORDER: [Self; 2] = [Self::Alpha, Self::Additive];
+}
+
+//? Coarse sprite layers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RenderLayer {
+    Background,
+    #[default]
+    World,
+    Effects,
+    Debug,
+}
+
+impl RenderLayer {
+    const DRAW_ORDER: [Self; 4] = [Self::Background, Self::World, Self::Effects, Self::Debug];
+}
+
 //? A rectangle defining a region (screen coordinates or sprite sheet).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
@@ -86,6 +104,7 @@ pub struct Sprite {
     pub flip_x: bool,
     pub texture_id: usize, //* Which texture to use (0 = white pixel for rects)
     pub blend_mode: BlendMode,
+    pub layer: RenderLayer,
 }
 
 //? User-facing sprite definition with various builder methods.
@@ -99,6 +118,7 @@ impl Sprite {
             flip_x: false,
             texture_id: 0, //* Default to white pixel
             blend_mode: BlendMode::Alpha,
+            layer: RenderLayer::World,
         }
     }
 
@@ -119,6 +139,11 @@ impl Sprite {
 
     pub fn with_blend_mode(mut self, blend_mode: BlendMode) -> Self {
         self.blend_mode = blend_mode;
+        self
+    }
+
+    pub fn with_layer(mut self, layer: RenderLayer) -> Self {
+        self.layer = layer;
         self
     }
 
@@ -155,6 +180,19 @@ impl Sprite {
     }
 }
 
+struct RectBatchRange {
+    layer: RenderLayer,
+    blend_mode: BlendMode,
+    range: std::ops::Range<u32>,
+}
+
+struct TextureBatchRange {
+    layer: RenderLayer,
+    blend_mode: BlendMode,
+    texture_id: usize,
+    range: std::ops::Range<u32>,
+}
+
 //? Sprite rendering system.
 pub struct SpriteRenderer {
     pipeline: wgpu::RenderPipeline,
@@ -168,14 +206,14 @@ pub struct SpriteRenderer {
     rect_instance_buffer: wgpu::Buffer,
     rect_instance_data: Vec<SpriteInstance>,
     sprite_instance_buffer: wgpu::Buffer,
+    sprite_instance_data: Vec<SpriteInstance>,
 
     //? Pre-uploaded batch ranges: (texture_id, start_instance..end_instance)
-    batch_ranges: Vec<(usize, std::ops::Range<u32>)>,
-    additive_batch_ranges: Vec<(usize, std::ops::Range<u32>)>,
+    rect_batch_ranges: Vec<RectBatchRange>,
+    texture_batch_ranges: Vec<TextureBatchRange>,
 
-    //? Reusable per-frame texture batch map (avoids heap alloc each frame)
+    //? Reusable per-frame texture batch map (avoids heap alloc each frame).
     texture_batches: Vec<Vec<SpriteInstance>>,
-    additive_texture_batches: Vec<Vec<SpriteInstance>>,
 }
 
 impl SpriteRenderer {
@@ -447,10 +485,10 @@ impl SpriteRenderer {
             rect_instance_buffer,
             rect_instance_data: Vec::with_capacity(MAX_SPRITES),
             sprite_instance_buffer,
-            batch_ranges: Vec::new(),
-            additive_batch_ranges: Vec::new(),
+            sprite_instance_data: Vec::with_capacity(MAX_SPRITES),
+            rect_batch_ranges: Vec::new(),
+            texture_batch_ranges: Vec::new(),
             texture_batches: Vec::new(),
-            additive_texture_batches: Vec::new(),
         }
     }
 
@@ -495,19 +533,15 @@ impl SpriteRenderer {
         texture_sizes: &[(f32, f32)],
     ) {
         self.rect_instance_data.clear();
-        self.batch_ranges.clear();
-        self.additive_batch_ranges.clear();
+        self.sprite_instance_data.clear();
+        self.rect_batch_ranges.clear();
+        self.texture_batch_ranges.clear();
 
         //? Clear and reuse per-texture batch vectors (avoids HashMap alloc each frame)
         for batch in &mut self.texture_batches {
             batch.clear();
         }
-        for batch in &mut self.additive_texture_batches {
-            batch.clear();
-        }
 
-        //? Convert high-level Sprite definitions to low-level SpriteInstance data,
-        //? partitioned by blend mode and then by texture ID.
         if sprites.len() > MAX_SPRITES {
             log::warn!(
                 "Sprite overflow: {} submitted, capped at {}",
@@ -515,26 +549,67 @@ impl SpriteRenderer {
                 MAX_SPRITES
             );
         }
-        for sprite in sprites.iter().take(MAX_SPRITES) {
-            if sprite.source_rect.is_some() {
-                let (tex_width, tex_height) = texture_sizes
-                    .get(sprite.texture_id)
-                    .copied()
-                    .unwrap_or((1.0, 1.0));
 
-                let instance = sprite.to_instance(tex_width, tex_height);
+        let sprites = &sprites[..sprites.len().min(MAX_SPRITES)];
 
-                let batches = match sprite.blend_mode {
-                    BlendMode::Alpha => &mut self.texture_batches,
-                    BlendMode::Additive => &mut self.additive_texture_batches,
-                };
-
-                if sprite.texture_id >= batches.len() {
-                    batches.resize_with(sprite.texture_id + 1, Vec::new);
+        //? Coarse contract: layers draw in order; within each layer, alpha draws
+        //? before additive. Texture sprites are still batched by texture ID.
+        for layer in RenderLayer::DRAW_ORDER {
+            for blend_mode in BlendMode::DRAW_ORDER {
+                let rect_start = self.rect_instance_data.len() as u32;
+                for sprite in sprites.iter().filter(|sprite| {
+                    sprite.layer == layer
+                        && sprite.blend_mode == blend_mode
+                        && sprite.source_rect.is_none()
+                }) {
+                    self.rect_instance_data.push(sprite.to_instance(1.0, 1.0));
                 }
-                batches[sprite.texture_id].push(instance);
-            } else {
-                self.rect_instance_data.push(sprite.to_instance(1.0, 1.0));
+
+                let rect_end = self.rect_instance_data.len() as u32;
+                if rect_start < rect_end {
+                    self.rect_batch_ranges.push(RectBatchRange {
+                        layer,
+                        blend_mode,
+                        range: rect_start..rect_end,
+                    });
+                }
+
+                for batch in &mut self.texture_batches {
+                    batch.clear();
+                }
+
+                for sprite in sprites.iter().filter(|sprite| {
+                    sprite.layer == layer
+                        && sprite.blend_mode == blend_mode
+                        && sprite.source_rect.is_some()
+                }) {
+                    let (tex_width, tex_height) = texture_sizes
+                        .get(sprite.texture_id)
+                        .copied()
+                        .unwrap_or((1.0, 1.0));
+
+                    if sprite.texture_id >= self.texture_batches.len() {
+                        self.texture_batches
+                            .resize_with(sprite.texture_id + 1, Vec::new);
+                    }
+                    self.texture_batches[sprite.texture_id]
+                        .push(sprite.to_instance(tex_width, tex_height));
+                }
+
+                for (texture_id, instances) in self.texture_batches.iter().enumerate() {
+                    if instances.is_empty() {
+                        continue;
+                    }
+
+                    let start = self.sprite_instance_data.len() as u32;
+                    self.sprite_instance_data.extend_from_slice(instances);
+                    self.texture_batch_ranges.push(TextureBatchRange {
+                        layer,
+                        blend_mode,
+                        texture_id,
+                        range: start..self.sprite_instance_data.len() as u32,
+                    });
+                }
             }
         }
 
@@ -547,34 +622,11 @@ impl SpriteRenderer {
             );
         }
 
-        //? Concatenate alpha batches, then additive batches, into one contiguous buffer
-        let mut all_instances: Vec<SpriteInstance> = Vec::new();
-
-        for (tex_id, instances) in self.texture_batches.iter().enumerate() {
-            if instances.is_empty() {
-                continue;
-            }
-            let start = all_instances.len() as u32;
-            all_instances.extend_from_slice(instances);
-            self.batch_ranges
-                .push((tex_id, start..all_instances.len() as u32));
-        }
-
-        for (tex_id, instances) in self.additive_texture_batches.iter().enumerate() {
-            if instances.is_empty() {
-                continue;
-            }
-            let start = all_instances.len() as u32;
-            all_instances.extend_from_slice(instances);
-            self.additive_batch_ranges
-                .push((tex_id, start..all_instances.len() as u32));
-        }
-
-        if !all_instances.is_empty() {
+        if !self.sprite_instance_data.is_empty() {
             queue.write_buffer(
                 &self.sprite_instance_buffer,
                 0,
-                bytemuck::cast_slice(&all_instances),
+                bytemuck::cast_slice(&self.sprite_instance_data),
             );
         }
     }
@@ -589,46 +641,56 @@ impl SpriteRenderer {
     ) {
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
 
-        //? Draw rects with the 1x1 white pixel texture (always alpha blend)
-        if !self.rect_instance_data.is_empty() {
-            render_pass.set_pipeline(&self.pipeline);
-            render_pass.set_bind_group(1, &self.default_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.rect_instance_buffer.slice(..));
-            render_pass.draw(0..6, 0..self.rect_instance_data.len() as u32);
-        }
-
-        //? Draw alpha-blended texture batches
-        let has_alpha = !self.batch_ranges.is_empty();
-        let has_additive = !self.additive_batch_ranges.is_empty();
-
-        if has_alpha || has_additive {
+        if !self.sprite_instance_data.is_empty() {
             render_pass.set_vertex_buffer(0, self.sprite_instance_buffer.slice(..));
         }
 
-        if has_alpha {
-            render_pass.set_pipeline(&self.pipeline);
+        for layer in RenderLayer::DRAW_ORDER {
+            for blend_mode in BlendMode::DRAW_ORDER {
+                let pipeline = match blend_mode {
+                    BlendMode::Alpha => &self.pipeline,
+                    BlendMode::Additive => &self.additive_pipeline,
+                };
 
-            for &(texture_id, ref range) in &self.batch_ranges {
-                let bind_group = bind_groups
-                    .get(texture_id)
-                    .unwrap_or(&self.default_bind_group);
+                render_pass.set_pipeline(pipeline);
 
-                render_pass.set_bind_group(1, bind_group, &[]);
-                render_pass.draw(0..6, range.clone());
-            }
-        }
+                if self
+                    .rect_batch_ranges
+                    .iter()
+                    .any(|batch| batch.layer == layer && batch.blend_mode == blend_mode)
+                {
+                    render_pass.set_bind_group(1, &self.default_bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, self.rect_instance_buffer.slice(..));
 
-        //? Draw additive-blended texture batches (glow effects)
-        if has_additive {
-            render_pass.set_pipeline(&self.additive_pipeline);
+                    for batch in self
+                        .rect_batch_ranges
+                        .iter()
+                        .filter(|batch| batch.layer == layer && batch.blend_mode == blend_mode)
+                    {
+                        render_pass.draw(0..6, batch.range.clone());
+                    }
+                }
 
-            for &(texture_id, ref range) in &self.additive_batch_ranges {
-                let bind_group = bind_groups
-                    .get(texture_id)
-                    .unwrap_or(&self.default_bind_group);
+                if self
+                    .texture_batch_ranges
+                    .iter()
+                    .any(|batch| batch.layer == layer && batch.blend_mode == blend_mode)
+                {
+                    render_pass.set_vertex_buffer(0, self.sprite_instance_buffer.slice(..));
 
-                render_pass.set_bind_group(1, bind_group, &[]);
-                render_pass.draw(0..6, range.clone());
+                    for batch in self
+                        .texture_batch_ranges
+                        .iter()
+                        .filter(|batch| batch.layer == layer && batch.blend_mode == blend_mode)
+                    {
+                        let bind_group = bind_groups
+                            .get(batch.texture_id)
+                            .unwrap_or(&self.default_bind_group);
+
+                        render_pass.set_bind_group(1, bind_group, &[]);
+                        render_pass.draw(0..6, batch.range.clone());
+                    }
+                }
             }
         }
     }

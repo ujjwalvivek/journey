@@ -9,12 +9,12 @@
 **  for convenience.
 *----------------------------------------------------------------------------**/
 pub mod animation;
+pub mod atmosphere;
 pub mod audio;
 pub mod camera;
 pub mod context;
 pub mod input;
 pub mod math;
-pub mod noise;
 pub mod physics;
 mod runtime;
 pub mod sprite;
@@ -36,8 +36,7 @@ pub use input::{GameAction, InputMap, InputState, Key, MouseBinding};
 pub use kira::sound::static_sound::StaticSoundData;
 pub use math::move_towards;
 pub use physics::{AABB, BoxVolume, CollisionLayer, SweepResult};
-pub use sprite::BlendMode;
-pub use sprite::Rect;
+pub use sprite::{BlendMode, Rect, RenderLayer};
 
 pub use egui;
 #[cfg(not(target_arch = "wasm32"))]
@@ -46,9 +45,54 @@ pub use texture::Texture;
 pub use texture_manager::TextureHandle;
 pub use time::FixedTime;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BloomSettings {
+    pub enabled: bool,
+    pub threshold: f32,
+    pub intensity: f32,
+    pub radius: f32,
+}
+
+impl Default for BloomSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            threshold: 0.7,
+            intensity: 0.35,
+            radius: 2.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SkyParams {
+    pub enabled: bool,
+    pub horizon_glow: f32,
+    pub top_color: [f32; 3],
+    pub horizon_color: [f32; 3],
+    pub bottom_color: [f32; 3],
+    pub horizon_y: f32,
+    pub horizon_width: f32,
+}
+
+impl Default for SkyParams {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            horizon_glow: 0.35,
+            top_color: [0.41, 0.36, 0.81],
+            horizon_color: [0.67, 0.42, 0.85],
+            bottom_color: [0.25, 0.17, 0.44],
+            horizon_y: 0.66,
+            horizon_width: 0.24,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneParams {
     pub background_color: [f32; 3],
+    pub sky: SkyParams,
     pub seed: u32,
     pub fog_enabled: bool,
     pub fog_density: f32,
@@ -63,6 +107,7 @@ impl Default for SceneParams {
     fn default() -> Self {
         Self {
             background_color: [0.67, 0.42, 0.85], //* #AC6CDA
+            sky: SkyParams::default(),
             seed: 42,
             fog_enabled: true,
             fog_density: 10.0,

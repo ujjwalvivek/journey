@@ -45,7 +45,7 @@ The project ships as a Cargo workspace with two crates, a reusable `journey-engi
 ├─────────────────────────────────────────────────────────┤
 │                  engine (library crate)                 │
 │  GameApp trait · Context · Renderer · Input · Physics   │
-│  Audio · Animation · Camera · Texture · Time · Noise    │
+│  Audio · Animation · Camera · Texture · Time · Atmosphere│
 ├─────────────────────────────────────────────────────────┤
 │              Platform Abstraction Layer                 │
 │  wgpu (GPU) · winit (Windowing) · kira (Audio)          │
@@ -53,7 +53,7 @@ The project ships as a Cargo workspace with two crates, a reusable `journey-engi
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Design philosophy:** Data-oriented, trait-driven. Games implement the `GameApp` trait to hook into the engine's lifecycle. The engine calls `init → fixed_update → update → render → ui` each frame. All mutable game state flows through a single `Context` struct.
+**Design philosophy:** Data-oriented, trait-driven, and deliberately narrow. Games implement the `GameApp` trait to hook into the engine's lifecycle. The engine calls `init → fixed_update → update → render → ui` each frame. All mutable engine access flows through a single `Context` struct.
 
 ---
 
@@ -64,7 +64,7 @@ Journey/
 ├── Cargo.toml              # Workspace root (members: engine, game)
 ├── engine/                  # Reusable library - the product
 │   ├── Cargo.toml           # wgpu, winit, kira, egui, glam, bytemuck
-│   ├── assets/shaders/      # WGSL shaders (sprite, noise)
+│   ├── assets/shaders/      # WGSL shaders (sprite, atmosphere)
 │   └── src/
 │       ├── lib.rs           # Public API surface, GameApp trait, re-exports
 │       ├── runtime.rs       # Event loop, wGPU init, render orchestration
@@ -79,7 +79,7 @@ Journey/
 │       ├── animation.rs     # Asset-agnostic animation state machine
 │       ├── time.rs          # Fixed-timestep accumulator
 │       ├── math.rs          # Shared math helpers (move_towards)
-│       └── noise.rs         # Perlin fog, gradient background
+│       └── atmosphere.rs    # Sky gradient and Perlin fog atmosphere buffers
 ├── game/                    # Executable - the content
 │   ├── Cargo.toml           # Depends on journey-engine (aliased as engine)
 │   ├── assets/              # Sprites, audio, levels
@@ -131,7 +131,7 @@ Uses `wasm-bindgen-futures` for async GPU init. `console_error_panic_hook` pipes
 
 ### Internal Resolution
 
-All gameplay renders to a configurable internal-resolution offscreen buffer (default **640×360**, set via `GameApp::internal_resolution()`), upscaled with nearest-neighbor filtering for a retro pixel aesthetic. The CPU noise pass operates at a tiny **32×32** simulation resolution for performance.
+All gameplay renders to a configurable internal-resolution offscreen buffer (default **640×360**, set via `GameApp::internal_resolution()`), upscaled with nearest-neighbor filtering for a retro pixel aesthetic. The CPU atmosphere pass operates at a fixed **32×32** simulation resolution.
 
 ---
 
@@ -151,7 +151,7 @@ The engine exposes functionality through a small set of public modules, all re-e
 | `animation`                   | Generic animation state machine (asset-agnostic)                           |
 | `time`                        | Fixed-timestep accumulator with freeze support                             |
 | `math`                        | Shared math utilities                                                      |
-| `noise`                       | Perlin noise fog and gradient background rendering                         |
+| `atmosphere`                  | Sky gradient and Perlin fog atmosphere rendering                           |
 
 ---
 
@@ -167,6 +167,7 @@ enum GameState {
     StartMenu { animation_progress: f32 },
     Options { return_state, tab },
     LevelEditor { return_state },
+    Benchmark,
     InGame,
     Paused,
 }
@@ -174,9 +175,9 @@ enum GameState {
 
 State transitions drive music changes, input routing, and UI visibility. The splash screen is skipped on WASM builds.
 
-### Entity-Component Pattern
+### Shared Entity Model
 
-All actors (player, enemies) share an `Entity` struct containing:
+Journey uses direct composition. Actors such as the player and enemies share an `Entity` struct containing:
 
 - Position and velocity (`Vec2`)
 - Facing direction
@@ -184,7 +185,7 @@ All actors (player, enemies) share an `Entity` struct containing:
 - Combat state (`CombatState`)
 - Health
 
-System functions like `fixed_update_physics()` and `integrate_and_collide()` operate on `&mut Entity` generically.
+System functions like `fixed_update_physics()` and `integrate_and_collide()` operate on `&mut Entity` generically. This keeps the hot gameplay path explicit and simple while still avoiding duplicated movement, collision, and combat state across actor types.
 
 ### Player Controller
 
@@ -232,29 +233,56 @@ Each Frame:
 
 ```
 ┌─────────────────────────────────────────────┐
-│           CPU Noise Pass (32×32)            │
-│   Perlin fog → gradient → upload to GPU     │
+│       CPU Atmosphere Pass (32×32)           │
+│   Sky gradient texture + fog overlay texture│
 ├─────────────────────────────────────────────┤
 │        Full-Screen Quad (background)        │
-│   Noise texture stretched to viewport       │
+│   Linear sky sample + nearest fog sample    │
 ├─────────────────────────────────────────────┤
 │     Instanced Sprite Pass (640×360)         │
-│   Alpha pipeline → Additive pipeline        │
+│   RenderLayer → Alpha → Additive            │
 │   Batched by texture_id, for 65,536 sprites │
+├─────────────────────────────────────────────┤
+│       Bloom Composite / Final Blit          │
+│   Bright-pass neighborhood glow + upscale   │
 ├─────────────────────────────────────────────┤
 │           egui Overlay Pass                 │
 │   Debug UI, menus, HUD                      │
 └─────────────────────────────────────────────┘
 ```
 
+### Atmosphere Rendering
+
+The background is not a scene graph or entity system. It is a small CPU-generated atmosphere pass built from `SceneParams`:
+
+- `SkyParams` produces the base sky gradient with top, horizon, and bottom colors.
+- Fog is generated into a separate Perlin overlay texture where RGB stores fog color and alpha stores coverage.
+- Both textures stay at **32×32**.
+- The fullscreen shader samples the sky texture with linear filtering, then samples the fog texture with nearest filtering and composites `mix(sky.rgb, fog.rgb, fog.a)`.
+
+This split keeps the sky blended while preserving the blocky legacy fog style. Gameplay sprites still render later into the internal 640×360 scene and remain nearest-upscaled.
+
 ### Sprite Rendering
 
-Sprites are submitted via `ctx.draw_sprite()` and `ctx.draw_sprite_from_sheet()` during `render()`. They are collected into a `Vec<Sprite>`, sorted by texture ID, converted to `SpriteInstance` GPU data, and rendered with instanced draw calls.
+Sprites are submitted via `ctx.draw_sprite()`, `ctx.draw_rect()`, and `ctx.draw_sprite_from_sheet()` during `render()`. They are collected into a `Vec<Sprite>`, partitioned by coarse `RenderLayer`, then by `BlendMode`, converted to `SpriteInstance` GPU data, batched by texture ID, and rendered with instanced draw calls.
+
+The sprite layer contract is intentionally small:
+
+- **Background**: optional sprite-backed background elements above the atmosphere pass
+- **World**: default gameplay sprites and solid geometry
+- **Effects**: glows, trails, particles, and additive rectangles
+- **Debug**: collision boxes and diagnostic overlays
+
+This is a render-order contract only. It is not a scene graph, ownership model, or ECS substitute.
 
 Two render pipelines exist within the same render pass:
 
 - **Alpha blend** (default): Standard transparency
-- **Additive blend**: For effects like hit flashes and glow
+- **Additive blend**: For effects like hit flashes, trails, projectile glow, and neon rectangles
+
+Additive blending brightens existing pixels. Bloom is the separate post-process that makes those bright pixels bleed into neighboring pixels. The engine exposes this through `BloomSettings`, either persistently through `ctx.bloom` or for a single frame with `ctx.override_bloom(...)`.
+
+The current bloom pass is intentionally small: it runs during the final blit from the internal render target to the window surface, keeps the source image crisp with `textureLoad`, extracts bright pixels above a threshold, samples a compact neighborhood, and composites the glow back over the scene. It is designed for neon/pixel-art styling, not physically accurate lighting.
 
 Horizontal sprite flipping is done in UV-space (not scale-space) to eliminate anchor-offset artifacts.
 
@@ -521,6 +549,7 @@ Key platform differences:
 | Audio init        | Immediate at startup        | Deferred until user gesture                 |
 | Logging           | `env_logger`                | `console_log` + `console_error_panic_hook`  |
 | Fullscreen        | `winit::Fullscreen`         | CSS `100vw × 100vh`                         |
+| Visual FPS cap    | Native sleep/WaitUntil cap  | Browser RAF/vsync                           |
 | Level persistence | File I/O (`world.txt`)      | `web_sys::Storage` (localStorage)           |
 | Splash screen     | 2s timer                    | Skipped                                     |
 | Clipboard         | OS clipboard via `arboard`  | Not available                               |
@@ -543,7 +572,7 @@ Key platform differences:
 | WASM binary         | < 5 MB (gzip)                                                          |
 | Sprite cap          | 65,536 instanced sprites per frame                                     |
 | Physics steps       | Max 5 per frame (spiral-of-death cap)                                  |
-| Noise resolution    | 32×32 CPU pass at ~60Hz                                                |
+| Atmosphere resolution | 32×32 CPU sky/fog pass at ~60Hz                                      |
 | Internal resolution | Default 640×360 (configurable via `GameApp`), nearest-neighbor upscale |
 
 ---

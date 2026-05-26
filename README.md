@@ -33,7 +33,7 @@
   </tr>
   <tr>
     <td align="right"><img src="https://img.shields.io/badge/ARCHITECTURE-000000?style=for-the-badge" alt="Architecture"/></td>
-    <td><img src="https://img.shields.io/badge/Data--Oriented_Trait--Driven_ECS with_custom_render_pipeline-FFFFFF?style=for-the-badge&logoColor=000000" alt="Data-Oriented"/></td>
+    <td><img src="https://img.shields.io/badge/Data--Oriented_Trait--Driven_Fixed--Step_2D_Engine-FFFFFF?style=for-the-badge&logoColor=000000" alt="Data-Oriented"/></td>
   </tr>
   <tr>
     <td align="right"><img src="https://img.shields.io/badge/TARGET-000000?style=for-the-badge" alt="Target"/></td>

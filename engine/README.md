@@ -13,6 +13,7 @@ A cross-platform 2D game engine built with Rust and wGPU.
 - **Generic action-based input** mapping for keyboard, mouse, and gamepad
 - **Fixed-timestep physics** with swept AABB collision detection and collision layers
 - **Instanced sprite rendering** with spritesheet support and blend modes
+- **Atmosphere rendering** with linear sky gradients and chunky Perlin fog
 - **Asset-agnostic animation** state machine with frame timing and looping
 - **Cross-platform audio** via Kira with music, ambience, SFX, and UI sub-tracks
 - **Orthographic camera** with screen shake

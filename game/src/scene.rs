@@ -71,6 +71,7 @@ pub fn show_ui(p: DebugUiParams<'_>) {
         show_physics_tuner_in_game,
         pending_audio,
     } = p;
+    params.sky.enabled = true;
     scene.params = params.clone();
     let theme = journey_ui::theme();
 
@@ -89,6 +90,92 @@ pub fn show_ui(p: DebugUiParams<'_>) {
                 .with_checkbox_sound(scene.show_fps, pending_audio);
             ui.checkbox(&mut scene.show_combat, "Show combat FSM")
                 .with_checkbox_sound(scene.show_combat, pending_audio);
+
+            ui.separator();
+            let scale = (ui.ctx().viewport_rect().height() / 1080.0).clamp(0.45, 1.0);
+            ui.label(journey_ui::command_label("Sky", 13.0 * scale));
+
+            {
+                ui.horizontal(|ui| {
+                    ui.label("Top");
+                    ui.color_edit_button_rgb(&mut params.sky.top_color);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Horizon");
+                    ui.color_edit_button_rgb(&mut params.sky.horizon_color);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Bottom");
+                    ui.color_edit_button_rgb(&mut params.sky.bottom_color);
+                });
+                journey_ui::slider_f32(
+                    ui,
+                    "Horizon Glow",
+                    &mut params.sky.horizon_glow,
+                    0.0..=1.0,
+                    scale,
+                    |v| format!("{v:.2}"),
+                );
+                journey_ui::slider_f32(
+                    ui,
+                    "Horizon Y",
+                    &mut params.sky.horizon_y,
+                    0.0..=1.0,
+                    scale,
+                    |v| format!("{v:.2}"),
+                );
+                journey_ui::slider_f32(
+                    ui,
+                    "Softness",
+                    &mut params.sky.horizon_width,
+                    0.01..=0.6,
+                    scale,
+                    |v| format!("{v:.2}"),
+                );
+                {
+                    let r = journey_ui::toggle(ui, &mut params.fog_enabled, "Fog", scale);
+                    r.with_checkbox_sound(params.fog_enabled, pending_audio);
+                }
+                if params.fog_enabled {
+                    ui.horizontal(|ui| {
+                        ui.label("Fog");
+                        ui.color_edit_button_rgb(&mut params.fog_color);
+                    });
+                    journey_ui::slider_u32(ui, "Fog Seed", &mut params.seed, 0..=9999, scale);
+                    journey_ui::slider_f32(
+                        ui,
+                        "Fog Density",
+                        &mut params.fog_density,
+                        0.5..=20.0,
+                        scale,
+                        |v| format!("{v:.2}"),
+                    );
+                    journey_ui::slider_f32(
+                        ui,
+                        "Fog Opacity",
+                        &mut params.fog_opacity,
+                        0.0..=1.0,
+                        scale,
+                        |v| format!("{v:.2}"),
+                    );
+                    journey_ui::slider_f32(
+                        ui,
+                        "Fog Speed",
+                        &mut params.fog_anim_speed,
+                        0.0..=2.0,
+                        scale,
+                        |v| format!("{v:.2}"),
+                    );
+                }
+                if ui.button("Reset Sky").clicked() {
+                    params.sky = Default::default();
+                    params.fog_enabled = true;
+                    params.fog_color = [0.41, 0.36, 0.81];
+                    params.fog_density = 10.0;
+                    params.fog_opacity = 1.0;
+                    params.fog_anim_speed = 0.5;
+                }
+            }
 
             if scene.show_fps {
                 ui.separator();
@@ -110,19 +197,26 @@ pub fn show_ui(p: DebugUiParams<'_>) {
                         *fixed_tick_rate = 60;
                     }
                 });
-                ui.separator();
-                ui.label("Visual FPS Lock:");
-                ui.horizontal(|ui| {
-                    if ui.selectable_label(*target_fps == 0, "Uncapped").clicked() {
-                        *target_fps = 0;
-                    }
-                    if ui.selectable_label(*target_fps == 60, "60 FPS").clicked() {
-                        *target_fps = 60;
-                    }
-                    if ui.selectable_label(*target_fps == 30, "30 FPS").clicked() {
-                        *target_fps = 30;
-                    }
-                });
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    ui.separator();
+                    ui.label("Visual FPS Lock:");
+                    ui.horizontal(|ui| {
+                        if ui.selectable_label(*target_fps == 0, "Uncapped").clicked() {
+                            *target_fps = 0;
+                        }
+                        if ui.selectable_label(*target_fps == 60, "60 FPS").clicked() {
+                            *target_fps = 60;
+                        }
+                        if ui.selectable_label(*target_fps == 30, "30 FPS").clicked() {
+                            *target_fps = 30;
+                        }
+                    });
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let _ = target_fps;
+                }
             }
 
             if scene.show_combat {

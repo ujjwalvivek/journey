@@ -225,6 +225,16 @@ pub fn render_projectiles(ctx: &mut engine::Context<JourneyAction>, pool: &Proje
             Vec2::new(PROJECTILE_SIZE, PROJECTILE_SIZE),
             proj.color,
         );
+        ctx.draw_rect_additive(
+            top_left,
+            Vec2::new(PROJECTILE_SIZE, PROJECTILE_SIZE),
+            [
+                proj.color[0],
+                proj.color[1],
+                proj.color[2],
+                proj.color[3] * 0.5,
+            ],
+        );
     }
 }
 

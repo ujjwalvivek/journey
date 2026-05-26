@@ -1,5 +1,5 @@
 use crate::input::JourneyAction;
-use engine::{AABB, Context, FixedTime, Vec2, egui, ui as journey_ui};
+use engine::{AABB, BloomSettings, Context, FixedTime, Vec2, egui, ui as journey_ui};
 
 const SPRITE_LIMIT: usize = 65_536;
 const MAX_PARTICLES: usize = SPRITE_LIMIT;
@@ -86,6 +86,12 @@ impl BenchmarkState {
     }
 
     pub fn ui(&mut self, egui_ctx: &egui::Context, ctx: &mut Context<JourneyAction>) {
+        ctx.override_bloom(BloomSettings {
+            enabled: true,
+            threshold: 0.58,
+            intensity: 0.28,
+            radius: 2.0,
+        });
         Self::paint_menu_grid(egui_ctx);
         self.show_stats_panel(egui_ctx, ctx);
         self.show_spawn_button(egui_ctx);

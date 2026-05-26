@@ -923,6 +923,11 @@ impl GameApp for JourneyGame {
             };
             let top_left = node.position - engine::Vec2::new(node.radius, node.radius);
             ctx.draw_rect(top_left, engine::Vec2::new(node_size, node_size), color);
+            ctx.draw_rect_additive(
+                top_left,
+                engine::Vec2::new(node_size, node_size),
+                [color[0], color[1], color[2], color[3] * 0.35],
+            );
         }
 
         if let Some(frame_rect) = self.player.anim_state.current_frame(
@@ -1021,6 +1026,11 @@ impl GameApp for JourneyGame {
                         engine::Vec2::new(2.0, 2.0),
                         [0.2, 0.9, 1.0, alpha],
                     );
+                    ctx.draw_rect_additive(
+                        engine::Vec2::new(px - 1.0, py - 1.0),
+                        engine::Vec2::new(2.0, 2.0),
+                        [0.2, 0.9, 1.0, alpha * 0.5],
+                    );
                 }
             }
 
@@ -1032,14 +1042,16 @@ impl GameApp for JourneyGame {
                 let p = self.player.position();
                 let half_w = config::PLAYER_WIDTH / 2.0;
                 if self.player.entity.touching_wall_left {
-                    ctx.draw_rect(
+                    ctx.draw_rect_layer(
+                        engine::RenderLayer::Debug,
                         engine::Vec2::new(p.x - half_w - 3.0, p.y - 4.0),
                         engine::Vec2::new(3.0, 8.0),
                         [1.0, 0.5, 0.0, 0.8],
                     );
                 }
                 if self.player.entity.touching_wall_right {
-                    ctx.draw_rect(
+                    ctx.draw_rect_layer(
+                        engine::RenderLayer::Debug,
                         engine::Vec2::new(p.x + half_w, p.y - 4.0),
                         engine::Vec2::new(3.0, 8.0),
                         [1.0, 0.5, 0.0, 0.8],
@@ -1067,29 +1079,29 @@ impl GameApp for JourneyGame {
             //? Outer glow ring
             let outer_size = engine::Vec2::new(radius * 2.0, radius * 2.0);
             let outer_pos = burst.position - engine::Vec2::new(radius, radius);
-            ctx.draw_rect(outer_pos, outer_size, [c[0], c[1], c[2], alpha * 0.15]);
+            ctx.draw_rect_additive(outer_pos, outer_size, [c[0], c[1], c[2], alpha * 0.15]);
 
             //? Bright inner ring (4 rect edges)
             let inner_r = radius - ring_thickness;
             if inner_r > 0.0 {
                 let ring_color = [c[0], c[1], c[2], alpha];
                 let top = burst.position - engine::Vec2::new(radius, radius);
-                ctx.draw_rect(
+                ctx.draw_rect_additive(
                     top,
                     engine::Vec2::new(radius * 2.0, ring_thickness),
                     ring_color,
                 );
-                ctx.draw_rect(
+                ctx.draw_rect_additive(
                     top + engine::Vec2::new(0.0, radius * 2.0 - ring_thickness),
                     engine::Vec2::new(radius * 2.0, ring_thickness),
                     ring_color,
                 );
-                ctx.draw_rect(
+                ctx.draw_rect_additive(
                     top,
                     engine::Vec2::new(ring_thickness, radius * 2.0),
                     ring_color,
                 );
-                ctx.draw_rect(
+                ctx.draw_rect_additive(
                     top + engine::Vec2::new(radius * 2.0 - ring_thickness, 0.0),
                     engine::Vec2::new(ring_thickness, radius * 2.0),
                     ring_color,
@@ -1100,7 +1112,7 @@ impl GameApp for JourneyGame {
             let flash_alpha = ((1.0 - t * 2.0).max(0.0)).powi(2);
             if flash_alpha > 0.01 {
                 let flash_size = 12.0 * (1.0 - t * 0.5);
-                ctx.draw_rect(
+                ctx.draw_rect_additive(
                     burst.position - engine::Vec2::new(flash_size / 2.0, flash_size / 2.0),
                     engine::Vec2::new(flash_size, flash_size),
                     [1.0, 1.0, 1.0, flash_alpha],
@@ -1156,6 +1168,7 @@ impl GameApp for JourneyGame {
             }
             GameState::Benchmark => {
                 let mut benchmark_params = params.clone();
+                benchmark_params.sky.enabled = false;
                 benchmark_params.background_color = [5.0 / 255.0, 5.0 / 255.0, 6.0 / 255.0];
                 benchmark_params.fog_enabled = false;
                 engine_ctx.override_scene_params(benchmark_params);

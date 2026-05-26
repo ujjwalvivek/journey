@@ -20,7 +20,7 @@
 10. [Animation](#animation)
 11. [Time](#time)
 12. [Math Utilities](#math-utilities)
-13. [Noise and Scene](#noise-and-scene)
+13. [Atmosphere and Scene](#atmosphere-and-scene)
 14. [Re-exports](#re-exports)
 
 ---
@@ -174,7 +174,7 @@ The single mutable handle games use to interact with the engine. Passed to every
 | `fps`                 | `f32`               | Current frames per second                                                  |
 | `frame_time_ms`       | `f32`               | Last frame time in milliseconds                                            |
 | `fixed_tick_rate`     | `u32`               | Fixed update rate in Hz (default: 60)                                      |
-| `target_fps`          | `u32`               | Target display frame rate                                                  |
+| `target_fps`          | `u32`               | Native display frame cap; WASM follows browser RAF/vsync                   |
 | `interpolation_alpha` | `f32`               | 0.0–1.0 fraction for render-time smoothing                                 |
 | `freeze_frames`       | `u16`               | Remaining freeze frames (hitstop)                                          |
 | `pending_shakes`      | `Vec<(f32, f32)>`   | Queued screen shakes: (intensity, duration)                                |
@@ -183,6 +183,7 @@ The single mutable handle games use to interact with the engine. Passed to every
 | `hdr_enabled`         | `bool`              | Whether HDR output is active                                               |
 | `audio`               | `AudioManager`      | Direct access to the audio system                                          |
 | `pending_ui_audio`    | `Vec<UiAudioEvent>` | UI audio events queued this frame                                          |
+| `bloom`               | `BloomSettings`     | Persistent post-process bloom settings                                     |
 
 ### Methods
 
@@ -208,6 +209,8 @@ let tex_player = ctx.load_texture(
 ```rust
 //? Draw a colored rectangle
 pub fn draw_rect(&mut self, position: Vec2, size: Vec2, color: [f32; 4])
+pub fn draw_rect_layer(&mut self, layer: RenderLayer, position: Vec2, size: Vec2, color: [f32; 4])
+pub fn draw_rect_additive(&mut self, position: Vec2, size: Vec2, color: [f32; 4])
 
 //? Draw a sprite with optional horizontal flip
 pub fn draw_sprite(&mut self, position: Vec2, size: Vec2, color: [f32; 4], flip_x: bool)
@@ -251,6 +254,12 @@ ctx.draw_sprite_from_sheet(
 ctx.draw_sprite_from_sheet_additive(
     position, size, [1.0, 0.8, 0.2, 0.6], source_rect, flip_x, texture_id,
 );
+
+//? Additive colored rectangle on the effects layer
+ctx.draw_rect_additive(position, size, [0.2, 0.9, 1.0, 0.5]);
+
+//? Debug geometry draws after world/effects sprites
+ctx.draw_rect_layer(RenderLayer::Debug, position, size, [0.0, 1.0, 0.0, 0.8]);
 ```
 
 #### Effects
@@ -261,6 +270,9 @@ pub fn trigger_freeze(&mut self, frames: u16)
 
 //? Queue a screen shake with intensity and duration in seconds
 pub fn trigger_shake(&mut self, intensity: f32, duration: f32)
+
+//? Temporarily override bloom for this frame only
+pub fn override_bloom(&mut self, settings: BloomSettings)
 ```
 
 **Usage from `game`:**
@@ -269,6 +281,33 @@ pub fn trigger_shake(&mut self, intensity: f32, duration: f32)
 //? Parry hitstop: 3-frame freeze + screen shake
 ctx.trigger_freeze(3);
 ctx.trigger_shake(4.0, 0.15);
+```
+
+#### Bloom
+
+```rust
+pub struct BloomSettings {
+    pub enabled: bool,
+    pub threshold: f32,
+    pub intensity: f32,
+    pub radius: f32,
+}
+```
+
+Bloom is a post-process primitive. It extracts bright pixels from the finished internal-resolution scene, samples a compact neighborhood, and composites the glow during the final blit. Use additive draw calls for neon/effect sources, then enable bloom globally through `ctx.bloom` or temporarily with `ctx.override_bloom(...)`.
+
+```rust
+ctx.bloom.enabled = true;
+ctx.bloom.threshold = 0.65;
+ctx.bloom.intensity = 0.35;
+ctx.bloom.radius = 2.0;
+
+ctx.override_bloom(BloomSettings {
+    enabled: true,
+    threshold: 0.58,
+    intensity: 0.28,
+    radius: 2.0,
+});
 ```
 
 #### Audio
@@ -610,6 +649,19 @@ pub enum BlendMode {
 }
 ```
 
+### RenderLayer
+
+```rust
+pub enum RenderLayer {
+    Background,
+    World,      //? Default gameplay layer
+    Effects,    //? Glows, trails, particles, additive rects
+    Debug,      //? Collision boxes and debug overlays
+}
+```
+
+Layers are a coarse draw-order contract, not a scene system. The renderer draws layers in declaration order, and within each layer draws alpha before additive.
+
 ### Sprite (Internal)
 
 The `Sprite` struct is not typically created directly by game code. Instead, use the `Context` draw methods which build sprites internally:
@@ -617,6 +669,12 @@ The `Sprite` struct is not typically created directly by game code. Instead, use
 ```rust
 //? Solid colored rectangle
 ctx.draw_rect(pos, size, color);
+
+//? Explicit layer for debug or background/world split
+ctx.draw_rect_layer(RenderLayer::Debug, pos, size, color);
+
+//? Additive colored rectangle for neon/effects
+ctx.draw_rect_additive(pos, size, color);
 
 //? Textured sprite from sheet
 ctx.draw_sprite_from_sheet(pos, size, color, source_rect, flip_x, texture_id);
@@ -628,8 +686,9 @@ ctx.draw_sprite_from_sheet_additive(pos, size, color, source_rect, flip_x, textu
 ### Rendering Details
 
 - Up to **65_536 sprites** per frame (instanced rendering)
-- Sprites are batched by `texture_id` for minimal GPU state changes
+- Sprites are ordered by `RenderLayer`, then `BlendMode`, then batched by `texture_id`
 - Two render pipelines: alpha blend (default) and additive blend
+- Bloom is applied during the final blit when enabled
 - Horizontal flipping is done in UV-space, avoiding anchor-offset artifacts
 - `texture_id = 0` uses a built-in 1×1 white pixel (for colored rectangles)
 
@@ -1064,17 +1123,34 @@ velocity_x = move_towards(velocity_x, target_speed, ACCELERATION * dt);
 
 ---
 
-## Noise and Scene
+## Atmosphere and Scene
 
-Procedural background rendering.
+Procedural sky and fog rendering.
 
-**Module:** `engine::noise`
+**Module:** `engine::atmosphere`
+
+### SkyParams
+
+```rust
+pub struct SkyParams {
+    pub enabled: bool,
+    pub horizon_glow: f32,
+    pub top_color: [f32; 3],
+    pub horizon_color: [f32; 3],
+    pub bottom_color: [f32; 3],
+    pub horizon_y: f32,
+    pub horizon_width: f32,
+}
+```
+
+`SkyParams` controls the gradient sky primitive. The engine defaults this on for Journey's game scene and options UI, replacing the older solid `background_color` path for normal gameplay. The old background color remains as a fallback for explicit overrides such as benchmark scenes.
 
 ### SceneParams
 
 ```rust
 pub struct SceneParams {
-    pub background_color: [f32; 3],  //? RGB (0.0–1.0)
+    pub background_color: [f32; 3],  //? Fallback RGB (0.0–1.0)
+    pub sky: SkyParams,
     pub seed: u32,
     pub fog_enabled: bool,
     pub fog_density: f32,
@@ -1085,19 +1161,26 @@ pub struct SceneParams {
 }
 ```
 
-`SceneParams` is passed to the `ui()` method and controls the CPU noise background pass. The engine renders a Perlin fog layer on top of a gradient background, animated over time.
+`SceneParams` is passed to `GameApp::ui()` so games can expose debug or options controls. The runtime renders two 32x32 CPU-generated atmosphere textures:
 
-### Noise Functions
+- **Sky texture**: gradient/horizon data, sampled linearly by the fullscreen shader so the sky blends smoothly.
+- **Fog texture**: Perlin fog overlay with alpha coverage, sampled with nearest filtering so fog keeps the chunky retro look.
+
+The fullscreen background shader composites `sky.rgb` with `fog.rgb` using `fog.a`, then world sprites render on top at the game's internal resolution.
+
+### Atmosphere Functions
 
 ```rust
 pub fn hex_to_rgb(hex: &str) -> (u8, u8, u8)
 pub fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32
 pub fn draw_gradient(buffer, width, height, top_rgb, bot_rgb)
-pub fn apply_fog(buffer, width, height, time, density, opacity, perlin, seed, fog_rgb, anim_speed)
-pub fn render_scene_to_buffer(buffer, width, height, params, perlin_cache)
+pub fn render_sky_to_buffer(buffer, width, height, params)
+pub fn render_fog_overlay(buffer, width, height, time, density, opacity, perlin, seed, fog_rgb, anim_speed)
+pub fn render_fog_to_buffer(buffer, width, height, params, fog_noise_cache)
+pub fn render_atmosphere_to_buffer(buffer, width, height, params, fog_noise_cache)
 ```
 
-These are called internally by the engine render loop. Game code typically only modifies `SceneParams` through the `ui()` callback.
+These are called internally by the engine render loop. `render_atmosphere_to_buffer` remains as a CPU-composited helper for tests and non-GPU callers.
 
 ---
 
@@ -1118,7 +1201,10 @@ pub use input::{GameAction, InputMap, InputState, Key, MouseBinding};
 pub use kira::sound::static_sound::StaticSoundData;
 pub use math::move_towards;
 pub use physics::{AABB, BoxVolume, CollisionLayer, SweepResult};
-pub use sprite::{BlendMode, Rect};
+pub use sprite::{BlendMode, Rect, RenderLayer};
+pub use BloomSettings;
+pub use SkyParams;
+pub use SceneParams;
 pub use animation::{AnimationDef, AnimationState};
 pub use texture::Texture;
 pub use texture_manager::TextureHandle;

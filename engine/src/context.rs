@@ -1,10 +1,10 @@
-use crate::SceneParams;
 /**----------------------------------------------------
 *!  Game context providing access to engine systems.
 *----------------------------------------------------**/
 use crate::audio::{AudioManager, UiAudioEvent};
 use crate::input::{GameAction, InputState};
-use crate::sprite::{BlendMode, Rect, Sprite};
+use crate::sprite::{BlendMode, Rect, RenderLayer, Sprite};
+use crate::{BloomSettings, SceneParams};
 use glam::Vec2;
 
 #[derive(Debug, Clone, Copy)]
@@ -64,7 +64,9 @@ pub struct Context<A: GameAction> {
     pub request_hdr: Option<bool>,
     pub audio: AudioManager,
     pub pending_ui_audio: Vec<UiAudioEvent>,
+    pub bloom: BloomSettings,
     pub(crate) scene_params_override: Option<SceneParams>,
+    pub(crate) bloom_override: Option<BloomSettings>,
 
     //* pub(crate) - public only within the current crate
     //* Vec<T> - growable, heap-allocated array
@@ -107,12 +109,18 @@ impl<A: GameAction> Context<A> {
             request_hdr: None,
             audio: AudioManager::new(),
             pending_ui_audio: Vec::new(),
+            bloom: BloomSettings::default(),
             scene_params_override: None,
+            bloom_override: None,
         }
     }
 
     pub fn override_scene_params(&mut self, params: SceneParams) {
         self.scene_params_override = Some(params);
+    }
+
+    pub fn override_bloom(&mut self, settings: BloomSettings) {
+        self.bloom_override = Some(settings);
     }
 
     //? Queue a texture for loading. Called during `GameApp::init()`.
@@ -144,14 +152,57 @@ impl<A: GameAction> Context<A> {
     //? - color: RGBA color (each component 0.0 to 1.0)
     //? - flip_x: Horizontally flip the sprite
     pub fn draw_sprite(&mut self, position: Vec2, size: Vec2, color: [f32; 4], flip_x: bool) {
-        self.sprite_batch
-            .push(Sprite::new(position, size, color).with_flip(flip_x));
+        self.draw_sprite_layer(RenderLayer::World, position, size, color, flip_x);
+    }
+
+    pub fn draw_sprite_layer(
+        &mut self,
+        layer: RenderLayer,
+        position: Vec2,
+        size: Vec2,
+        color: [f32; 4],
+        flip_x: bool,
+    ) {
+        self.sprite_batch.push(
+            Sprite::new(position, size, color)
+                .with_flip(flip_x)
+                .with_layer(layer),
+        );
         //* push to the array just like in C++ std::vector or python list.
     }
 
     //* Same as draw_sprite, without flip
     pub fn draw_rect(&mut self, position: Vec2, size: Vec2, color: [f32; 4]) {
-        self.sprite_batch.push(Sprite::new(position, size, color));
+        self.draw_rect_layer(RenderLayer::World, position, size, color);
+    }
+
+    pub fn draw_rect_layer(
+        &mut self,
+        layer: RenderLayer,
+        position: Vec2,
+        size: Vec2,
+        color: [f32; 4],
+    ) {
+        self.sprite_batch
+            .push(Sprite::new(position, size, color).with_layer(layer));
+    }
+
+    pub fn draw_rect_additive(&mut self, position: Vec2, size: Vec2, color: [f32; 4]) {
+        self.draw_rect_additive_layer(RenderLayer::Effects, position, size, color);
+    }
+
+    pub fn draw_rect_additive_layer(
+        &mut self,
+        layer: RenderLayer,
+        position: Vec2,
+        size: Vec2,
+        color: [f32; 4],
+    ) {
+        self.sprite_batch.push(
+            Sprite::new(position, size, color)
+                .with_layer(layer)
+                .with_blend_mode(BlendMode::Additive),
+        );
     }
 
     //? Draw a sprite from a sprite sheet.
@@ -171,11 +222,34 @@ impl<A: GameAction> Context<A> {
         flip_x: bool,
         texture_id: usize,
     ) {
+        self.draw_sprite_from_sheet_layer(
+            RenderLayer::World,
+            position,
+            size,
+            color,
+            source_rect,
+            flip_x,
+            texture_id,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_sprite_from_sheet_layer(
+        &mut self,
+        layer: RenderLayer,
+        position: Vec2,
+        size: Vec2,
+        color: [f32; 4],
+        source_rect: Rect,
+        flip_x: bool,
+        texture_id: usize,
+    ) {
         self.sprite_batch.push(
             Sprite::new(position, size, color)
                 .with_source(source_rect)
                 .with_flip(flip_x)
-                .with_texture_id(texture_id),
+                .with_texture_id(texture_id)
+                .with_layer(layer),
         );
     }
 
@@ -189,11 +263,34 @@ impl<A: GameAction> Context<A> {
         flip_x: bool,
         texture_id: usize,
     ) {
+        self.draw_sprite_from_sheet_additive_layer(
+            RenderLayer::Effects,
+            position,
+            size,
+            color,
+            source_rect,
+            flip_x,
+            texture_id,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_sprite_from_sheet_additive_layer(
+        &mut self,
+        layer: RenderLayer,
+        position: Vec2,
+        size: Vec2,
+        color: [f32; 4],
+        source_rect: Rect,
+        flip_x: bool,
+        texture_id: usize,
+    ) {
         self.sprite_batch.push(
             Sprite::new(position, size, color)
                 .with_source(source_rect)
                 .with_flip(flip_x)
                 .with_texture_id(texture_id)
+                .with_layer(layer)
                 .with_blend_mode(BlendMode::Additive),
         );
     }

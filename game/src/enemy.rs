@@ -496,14 +496,24 @@ pub fn render_debug_boxes(ctx: &mut engine::Context<JourneyAction>, entity: &Ent
     //* Blue: hurtbox (semi-transparent fill + outline)
     let hb = entity.hurtbox();
     let hb_pos = hb.top_left();
-    ctx.draw_rect(hb_pos, hb.size, [0.0, 0.3, 1.0, 0.15]);
+    ctx.draw_rect_layer(
+        engine::RenderLayer::Debug,
+        hb_pos,
+        hb.size,
+        [0.0, 0.3, 1.0, 0.15],
+    );
     draw_outline(ctx, hb_pos, hb.size, [0.0, 0.3, 1.0, 0.6], t);
 
     //* Red: active hitbox
     if let Some(ref volume) = entity.hitbox_volume {
         let hitbox_aabb = volume.world_aabb(entity.position, entity.facing_right);
         let hit_pos = hitbox_aabb.top_left();
-        ctx.draw_rect(hit_pos, hitbox_aabb.size, [1.0, 0.0, 0.0, 0.3]);
+        ctx.draw_rect_layer(
+            engine::RenderLayer::Debug,
+            hit_pos,
+            hitbox_aabb.size,
+            [1.0, 0.0, 0.0, 0.3],
+        );
         draw_outline(ctx, hit_pos, hitbox_aabb.size, [1.0, 0.0, 0.0, 1.0], t);
     }
 
@@ -515,7 +525,12 @@ pub fn render_debug_boxes(ctx: &mut engine::Context<JourneyAction>, entity: &Ent
         let flip = if entity.facing_right { 1.0 } else { -1.0 };
         let parry_center = entity.position + Vec2::new(PARRY_BOX_FRONT_OFFSET * flip, 0.0);
         let parry_pos = parry_center - parry_size / 2.0;
-        ctx.draw_rect(parry_pos, parry_size, [1.0, 1.0, 0.0, 0.25]);
+        ctx.draw_rect_layer(
+            engine::RenderLayer::Debug,
+            parry_pos,
+            parry_size,
+            [1.0, 1.0, 0.0, 0.25],
+        );
         draw_outline(ctx, parry_pos, parry_size, [1.0, 1.0, 0.0, 1.0], t);
     }
 }
@@ -527,14 +542,16 @@ fn draw_outline(
     color: [f32; 4],
     t: f32,
 ) {
-    ctx.draw_rect(pos, Vec2::new(size.x, t), color); //* top
-    ctx.draw_rect(
+    ctx.draw_rect_layer(engine::RenderLayer::Debug, pos, Vec2::new(size.x, t), color); //* top
+    ctx.draw_rect_layer(
+        engine::RenderLayer::Debug,
         pos + Vec2::new(0.0, size.y - t),
         Vec2::new(size.x, t),
         color,
     ); //* bottom
-    ctx.draw_rect(pos, Vec2::new(t, size.y), color); //* left
-    ctx.draw_rect(
+    ctx.draw_rect_layer(engine::RenderLayer::Debug, pos, Vec2::new(t, size.y), color); //* left
+    ctx.draw_rect_layer(
+        engine::RenderLayer::Debug,
         pos + Vec2::new(size.x - t, 0.0),
         Vec2::new(t, size.y),
         color,

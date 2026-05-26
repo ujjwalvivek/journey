@@ -1,5 +1,5 @@
 /**--------------------------------------------------------------------------------
-*!  Full-screen triangle shader for displaying the CPU-generated noise texture.
+*!  Full-screen triangle shader for displaying CPU-generated atmosphere textures.
 *?  Uses 3 vertices (no vertex buffer) to cover clip space with a single triangle.
 *--------------------------------------------------------------------------------**/
 struct VertexOutput {
@@ -25,11 +25,15 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
     return out;
 }
 
-@group(0) @binding(0) var t_noise: texture_2d<f32>;
-@group(0) @binding(1) var s_noise: sampler;
+@group(0) @binding(0) var t_sky: texture_2d<f32>;
+@group(0) @binding(1) var s_sky: sampler;
+@group(0) @binding(2) var t_fog: texture_2d<f32>;
+@group(0) @binding(3) var s_fog: sampler;
 
-//? Simple fragment shader that samples the noise texture using the UVs from the vertex shader.
+//? Sky samples linearly while fog samples nearest in its own texture.
 @fragment
 fn fs_main(frag: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(t_noise, s_noise, frag.uv);
+    let sky = textureSample(t_sky, s_sky, frag.uv);
+    let fog = textureSample(t_fog, s_fog, frag.uv);
+    return vec4<f32>(mix(sky.rgb, fog.rgb, fog.a), 1.0);
 }

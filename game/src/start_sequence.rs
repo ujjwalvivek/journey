@@ -252,7 +252,7 @@ impl JourneyGame {
                                     let r = ui
                                         .add_sized(
                                             [btn_w, btn_h],
-                                            menu_btn("Exit Game", self.menu_index == idx),
+                                            menu_btn("Exit Journey", self.menu_index == idx),
                                         )
                                         .with_ui_sound(&mut engine_ctx.pending_ui_audio);
                                     if r.clicked() || (self.menu_index == idx && confirmed) {
@@ -629,15 +629,58 @@ impl JourneyGame {
                                                         );
                                                         ui.add_space(section_spacing);
                                                     }
+                                                    params.sky.enabled = true;
                                                     ui.horizontal(|ui| {
                                                         ui.label(
-                                                            egui::RichText::new("Background")
+                                                            egui::RichText::new("Sky Top")
                                                                 .size(label_size),
                                                         );
                                                         ui.color_edit_button_rgb(
-                                                            &mut params.background_color,
+                                                            &mut params.sky.top_color,
                                                         );
                                                     });
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(
+                                                            egui::RichText::new("Sky Horizon")
+                                                                .size(label_size),
+                                                        );
+                                                        ui.color_edit_button_rgb(
+                                                            &mut params.sky.horizon_color,
+                                                        );
+                                                    });
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(
+                                                            egui::RichText::new("Sky Bottom")
+                                                                .size(label_size),
+                                                        );
+                                                        ui.color_edit_button_rgb(
+                                                            &mut params.sky.bottom_color,
+                                                        );
+                                                    });
+                                                    journey_ui::slider_f32(
+                                                        ui,
+                                                        "Horizon Glow",
+                                                        &mut params.sky.horizon_glow,
+                                                        0.0..=1.0,
+                                                        ui_scale,
+                                                        |v| format!("{v:.2}"),
+                                                    );
+                                                    journey_ui::slider_f32(
+                                                        ui,
+                                                        "Horizon Y",
+                                                        &mut params.sky.horizon_y,
+                                                        0.0..=1.0,
+                                                        ui_scale,
+                                                        |v| format!("{v:.2}"),
+                                                    );
+                                                    journey_ui::slider_f32(
+                                                        ui,
+                                                        "Softness",
+                                                        &mut params.sky.horizon_width,
+                                                        0.01..=0.6,
+                                                        ui_scale,
+                                                        |v| format!("{v:.2}"),
+                                                    );
                                                     ui.add_space(section_spacing);
                                                     {
                                                         let r = journey_ui::toggle(

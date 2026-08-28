@@ -10,57 +10,18 @@
 
 ## Architectural Summary
 
-<table>
-  <tr>
-    <td align="right"><img src="https://img.shields.io/badge/CORE_STACK-000000?style=for-the-badge" alt="Core Stack"/></td>
-    <td>
-      <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-FFFFFF?style=for-the-badge&logo=rust&logoColor=000000" alt="Rust"/></a>
-      <a href="https://webassembly.org/"><img src="https://img.shields.io/badge/WebAssembly-FFFFFF?style=for-the-badge&logo=webassembly&logoColor=000000" alt="WebAssembly"/></a>
-      <a href="https://wgpu.rs/"><img src="https://img.shields.io/badge/wgpu-FFFFFF?style=for-the-badge&logo=wgpu&logoColor=000000" alt="wgpu"/></a>
-      <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-FFFFFF?style=for-the-badge&logo=typescript&logoColor=000000" alt="TypeScript"/></a>
-    </td>
-  </tr>
-  <tr>
-    <td align="right"><img src="https://img.shields.io/badge/LIBRARIES-000000?style=for-the-badge" alt="Libraries"/></td>
-    <td>
-      <a href="https://docs.rs/kira/latest/kira/"><img src="https://img.shields.io/badge/Kira-FFFFFF?style=for-the-badge&logo=rust&logoColor=000000" alt="Kira"/></a>
-      <a href="https://github.com/bitshifter/glam-rs"><img src="https://img.shields.io/badge/Glam-FFFFFF?style=for-the-badge&logo=rust&logoColor=000000" alt="Glam"/></a>
-      <a href="https://docs.rs/pollster/latest/pollster/"><img src="https://img.shields.io/badge/Pollster-FFFFFF?style=for-the-badge&logo=rust&logoColor=000000" alt="Pollster"/></a>
-      <a href="https://docs.rs/egui/latest/egui/"><img src="https://img.shields.io/badge/eGUI-FFFFFF?style=for-the-badge&logo=rust&logoColor=000000" alt="eGUI"/></a>
-      <a href="https://docs.rs/winit/latest/winit/"><img src="https://img.shields.io/badge/Winit-FFFFFF?style=for-the-badge&logo=rust&logoColor=000000" alt="Winit"/></a>
-      <a href="https://docs.rs/gilrs/latest/gilrs/"><img src="https://img.shields.io/badge/Gilrs-FFFFFF?style=for-the-badge&logo=rust&logoColor=000000" alt="Gilrs"/></a>
-    </td>
-  </tr>
-  <tr>
-    <td align="right"><img src="https://img.shields.io/badge/ARCHITECTURE-000000?style=for-the-badge" alt="Architecture"/></td>
-    <td><img src="https://img.shields.io/badge/Data--Oriented_Trait--Driven_Fixed--Step_2D_Engine-FFFFFF?style=for-the-badge&logoColor=000000" alt="Data-Oriented"/></td>
-  </tr>
-  <tr>
-    <td align="right"><img src="https://img.shields.io/badge/TARGET-000000?style=for-the-badge" alt="Target"/></td>
-    <td>
-      <img src="https://img.shields.io/badge/Native-FFFFFF?style=for-the-badge&logoColor=000000" alt="Native"/>
-      <img src="https://img.shields.io/badge/WebAssembly-FFFFFF?style=for-the-badge&logoColor=000000" alt="WebAssembly"/>
-    </td>
-  </tr>
-  <tr>
-    <td align="right"><img src="https://img.shields.io/badge/STATUS-000000?style=for-the-badge" alt="Status"/></td>
-    <td><img src="https://img.shields.io/badge/Phase_5:_MVP1_Complete-FFFFFF?style=for-the-badge&logoColor=000000" alt="Status"/></td>
-  </tr>
-  <tr>
-    <td align="right"><img src="https://img.shields.io/badge/INSPIRATION-000000?style=for-the-badge" alt="Inspiration"/></td>
-    <td>
-      <img src="https://img.shields.io/badge/Nine_Sols-FFFFFF?style=for-the-badge&logoColor=000000" alt="Nine Sols"/>
-      <img src="https://img.shields.io/badge/Sekiro-FFFFFF?style=for-the-badge&logoColor=000000" alt="Sekiro"/>
-      <img src="https://img.shields.io/badge/Ghostrunner-FFFFFF?style=for-the-badge&logoColor=000000" alt="Ghostrunner"/>
-      <img src="https://img.shields.io/badge/Katana_Zero-FFFFFF?style=for-the-badge&logoColor=000000" alt="Katana Zero"/>
-      <img src="https://img.shields.io/badge/Hollow_Knight-FFFFFF?style=for-the-badge&logoColor=000000" alt="Hollow Knight"/>
-    </td>
-  </tr>
-</table>
+| Category     | Details                                                    |
+| ------------ | ---------------------------------------------------------- |
+| Core stack   | Rust, WebAssembly, wgpu, TypeScript                        |
+| Libraries    | Kira, Glam, Pollster, eGUI, Winit, Gilrs                   |
+| Architecture | Data-oriented, trait-driven, fixed-step 2D engine          |
+| Targets      | Native, WebAssembly                                        |
+| Status       | Phase 5: MVP1 complete                                     |
+| Inspiration  | Nine Sols, Sekiro, Ghostrunner, Katana Zero, Hollow Knight |
 
 ## A different take on Souls-like Metroidvania
 
-A custom high-performance 2D game engine written in Rust + WGPU. Features AABB physics, focuses on precision platforming (*Hollow Knight*) and parry-based combat (*Sekiro*/*Nine Sols*) with a touch of a fast momentum based platformer (*Ghostrunner*). For a Metroidvania running at 60FPS (`Important Metric`) in a web browser, I want tight, deterministic, arcade physics, not realistic simulations. This project also serves as a "Living Proof of Work" for a **TPM** role.
+A custom high-performance 2D game engine written in Rust + WGPU. Features AABB physics, focuses on precision platforming (_Hollow Knight_) and parry-based combat (_Sekiro_/_Nine Sols_) with a touch of a fast momentum based platformer (_Ghostrunner_). For a Metroidvania running at 60FPS (`Important Metric`) in a web browser, I want tight, deterministic, arcade physics, not realistic simulations. This project also serves as a "Living Proof of Work" for a **TPM** role.
 
 It's all in the details. It’s not just about `Can I jump?` but `How does it feel to jump?` The secret sauce is in the mechanics that make the player feel powerful and responsive. Like coyote time, jump buffering, variable jump height, and a parry mechanic that rewards precise timing. The goal is to create a tech demo of the engine's capabilities by building a tight, fun, and responsive player controller that embodies the essence of a Fast Momentum Metroidvania gameplay.
 
@@ -93,7 +54,7 @@ Journey/
 │    ├── src/input.rs   //* JourneyAction enum and key/gamepad bindings
 │    └── Cargo.toml     //* Dependencies: journey-engine (aliased as engine)
 └── web/                //* Vite Project for WASM distribution
-    ├── src/            //* JavaScript Glue Code 
+    ├── src/            //* JavaScript Glue Code
     ├── package.json    //* NPM Dependencies
     └── vite.config.ts  //* WASM Configuration
 

@@ -329,7 +329,7 @@ impl LevelEditor {
                                         ui.add_space(section_spacing);
                                         egui::Frame::NONE
                                             .fill(theme.bg_deep)
-                                            .stroke(egui::Stroke::new(1.0, theme.stroke_soft))
+                                            .stroke(egui::Stroke::new(1.0_f32, theme.stroke_soft))
                                             .inner_margin(egui::Margin::same(
                                                 (8.0 * ui_scale).round() as i8,
                                             ))
@@ -450,7 +450,7 @@ impl LevelEditor {
     ) {
         egui::Frame::NONE
             .fill(theme.bg_deep)
-            .stroke(egui::Stroke::new(1.0, theme.stroke_soft))
+            .stroke(egui::Stroke::new(1.0_f32, theme.stroke_soft))
             .inner_margin(egui::Margin::same((8.0 * ui_scale).round() as i8))
             .show(ui, |ui| {
                 let lines: Vec<&str> = self.text_buffer.lines().collect();
@@ -640,7 +640,7 @@ impl LevelEditor {
                     egui::pos2(vp_x, egui_y),
                     egui::pos2(vp_x + scaled_w, egui_y),
                 ],
-                egui::Stroke::new(2.0, grid_color),
+                egui::Stroke::new(2.0_f32, grid_color),
             );
         }
         //? Draw grid lines (vertical)
@@ -652,7 +652,7 @@ impl LevelEditor {
                     egui::pos2(egui_x, vp_y),
                     egui::pos2(egui_x, vp_y + scaled_h),
                 ],
-                egui::Stroke::new(2.0, grid_color),
+                egui::Stroke::new(2.0_f32, grid_color),
             );
         }
 

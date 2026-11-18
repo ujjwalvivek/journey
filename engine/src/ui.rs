@@ -57,16 +57,16 @@ pub fn apply_theme(ctx: &Context) {
     visuals.extreme_bg_color = t.bg_deep;
     visuals.faint_bg_color = t.panel;
     visuals.widgets.noninteractive.bg_fill = t.panel;
-    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, t.text);
+    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, t.text);
     visuals.widgets.inactive.bg_fill = t.panel_alt;
-    visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, t.text);
+    visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, t.text);
     visuals.widgets.hovered.bg_fill = t.panel_hot;
-    visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, t.text);
+    visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, t.text);
     visuals.widgets.active.bg_fill = t.accent;
-    visuals.widgets.active.fg_stroke = Stroke::new(1.0, t.bg_deep);
+    visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, t.bg_deep);
     visuals.widgets.open.bg_fill = t.panel_hot;
     visuals.selection.bg_fill = t.accent;
-    visuals.selection.stroke = Stroke::new(1.0, t.bg_deep);
+    visuals.selection.stroke = Stroke::new(1.0_f32, t.bg_deep);
     visuals.window_corner_radius = 0.0.into();
     visuals.widgets.noninteractive.corner_radius = 0.0.into();
     visuals.widgets.inactive.corner_radius = 0.0.into();
@@ -106,7 +106,7 @@ pub fn show_perf_hud(ctx: &Context, stats: FrameStats) {
                     t.bg_deep.b(),
                     210,
                 ))
-                .stroke(Stroke::new(1.0, t.stroke_soft))
+                .stroke(Stroke::new(1.0_f32, t.stroke_soft))
                 .inner_margin(Margin::same(8))
                 .corner_radius(0.0)
                 .show(ui, |ui| {
@@ -159,7 +159,7 @@ pub fn paint_screen(ctx: &Context, id: impl std::hash::Hash, rect: Rect) {
     painter.rect_filled(top, 0.0, t.bg_deep);
     painter.line_segment(
         [top.left_bottom(), top.right_bottom()],
-        Stroke::new(1.0, t.stroke_soft),
+        Stroke::new(1.0_f32, t.stroke_soft),
     );
 
     let step = 64.0;
@@ -167,7 +167,7 @@ pub fn paint_screen(ctx: &Context, id: impl std::hash::Hash, rect: Rect) {
     while x <= rect.right() {
         painter.line_segment(
             [pos2(x, rect.top()), pos2(x, rect.bottom())],
-            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 8)),
+            Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 8)),
         );
         x += step;
     }
@@ -175,7 +175,7 @@ pub fn paint_screen(ctx: &Context, id: impl std::hash::Hash, rect: Rect) {
     while y <= rect.bottom() {
         painter.line_segment(
             [pos2(rect.left(), y), pos2(rect.right(), y)],
-            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 7)),
+            Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 7)),
         );
         y += step;
     }
@@ -190,7 +190,7 @@ pub fn panel_frame() -> Frame {
             t.panel.b(),
             235,
         ))
-        .stroke(Stroke::new(1.0, t.stroke_soft))
+        .stroke(Stroke::new(1.0_f32, t.stroke_soft))
         .inner_margin(Margin::same(16))
         .corner_radius(0.0)
 }
@@ -204,7 +204,7 @@ pub fn section_frame() -> Frame {
             t.panel_alt.b(),
             210,
         ))
-        .stroke(Stroke::new(1.0, t.stroke_soft))
+        .stroke(Stroke::new(1.0_f32, t.stroke_soft))
         .inner_margin(Margin::same(12))
         .corner_radius(0.0)
 }
@@ -240,7 +240,7 @@ pub fn menu_button(label: &str, focused: bool, scale: f32) -> Button<'static> {
     )
     .fill(if focused { t.text } else { t.panel })
     .stroke(Stroke::new(
-        if focused { 2.0 } else { 1.0 },
+        if focused { 2.0 } else { 1.0_f32 },
         if focused { t.text } else { t.stroke_soft },
     ))
     .corner_radius(0.0)
@@ -256,7 +256,7 @@ pub fn command_button(label: &str, focused: bool, scale: f32) -> Button<'static>
     )
     .fill(if focused { t.text } else { t.panel_alt })
     .stroke(Stroke::new(
-        if focused { 2.0 } else { 1.0 },
+        if focused { 2.0 } else { 1.0_f32 },
         if focused { t.text } else { t.stroke_soft },
     ))
     .corner_radius(0.0)
@@ -274,7 +274,7 @@ pub fn tab(ui: &mut Ui, label: &str, selected: bool, scale: f32) -> Response {
         )
         .fill(if selected { t.text } else { t.panel_alt })
         .stroke(Stroke::new(
-            1.0,
+            1.0_f32,
             if selected { t.text } else { t.stroke_soft },
         ))
         .corner_radius(0.0),
@@ -284,7 +284,7 @@ pub fn tab(ui: &mut Ui, label: &str, selected: bool, scale: f32) -> Response {
         ui.painter().rect_stroke(
             rect,
             0.0,
-            Stroke::new(1.0, t.accent_alt),
+            Stroke::new(1.0_f32, t.accent_alt),
             StrokeKind::Inside,
         );
     }
@@ -308,7 +308,7 @@ pub fn toggle(ui: &mut Ui, checked: &mut bool, label: &str, scale: f32) -> Respo
     painter.rect_stroke(
         switch_rect,
         0.0,
-        Stroke::new(1.0, if *checked { t.accent } else { t.dim }),
+        Stroke::new(1.0_f32, if *checked { t.accent } else { t.dim }),
         StrokeKind::Inside,
     );
     if *checked {
@@ -453,7 +453,7 @@ fn slider_impl(
         t.accent,
     );
     painter.rect_filled(track, 0.0, t.bg_deep);
-    painter.rect_stroke(track, 0.0, Stroke::new(1.0, t.dim), StrokeKind::Inside);
+    painter.rect_stroke(track, 0.0, Stroke::new(1.0_f32, t.dim), StrokeKind::Inside);
     painter.rect_filled(fill_rect, 0.0, t.accent);
     painter.rect_filled(
         thumb,

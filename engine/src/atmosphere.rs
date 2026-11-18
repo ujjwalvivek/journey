@@ -65,7 +65,7 @@ fn color_f32_to_byte(c: f32) -> u8 {
 }
 
 fn clear_rgba(buffer: &mut [u8], rgba: [u8; 4]) {
-    for px in buffer.chunks_exact_mut(4) {
+    for px in buffer.as_chunks_mut::<4>().0 {
         px.copy_from_slice(&rgba);
     }
 }
@@ -207,7 +207,12 @@ pub fn render_atmosphere_to_buffer(
     render_sky_to_buffer(buffer, width, height, params);
     let mut fog = vec![0u8; buffer.len()];
     render_fog_to_buffer(&mut fog, width, height, params, fog_noise_cache);
-    for (dst, src) in buffer.chunks_exact_mut(4).zip(fog.chunks_exact(4)) {
+    for (dst, src) in buffer
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(fog.as_chunks::<4>().0)
+    {
         let alpha = src[3] as f32 / 255.0;
         for c in 0..3 {
             dst[c] =

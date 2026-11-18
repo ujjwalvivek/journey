@@ -109,7 +109,7 @@ impl BenchmarkState {
         painter.rect_filled(top, 0.0, t.bg_deep);
         painter.line_segment(
             [top.left_bottom(), top.right_bottom()],
-            egui::Stroke::new(1.0, t.stroke_soft),
+            egui::Stroke::new(1.0_f32, t.stroke_soft),
         );
 
         let step = 64.0;
@@ -117,7 +117,10 @@ impl BenchmarkState {
         while x <= rect.right() {
             painter.line_segment(
                 [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 8)),
+                egui::Stroke::new(
+                    1.0_f32,
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 8),
+                ),
             );
             x += step;
         }
@@ -126,7 +129,10 @@ impl BenchmarkState {
         while y <= rect.bottom() {
             painter.line_segment(
                 [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
-                egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 7)),
+                egui::Stroke::new(
+                    1.0_f32,
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 7),
+                ),
             );
             y += step;
         }

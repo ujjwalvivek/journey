@@ -10,6 +10,7 @@
 *----------------------------------------------------------------------------**/
 pub mod animation;
 pub mod atmosphere;
+#[cfg_attr(not(feature = "audio"), path = "audio_stub.rs")]
 pub mod audio;
 pub mod camera;
 pub mod context;
@@ -21,23 +22,27 @@ pub mod sprite;
 pub mod texture;
 pub mod texture_manager;
 pub mod time;
+#[cfg(feature = "egui")]
 pub mod ui;
 
 //* Re-export commonly used types
 pub use animation::{AnimationDef, AnimationState};
-pub use audio::{
-    AudioManager, AudioResponse, AudioTrack, UiAudioEvent, load_sound_data,
-    sound_data_from_mono_samples,
-};
+#[cfg(all(feature = "audio", feature = "egui"))]
+pub use audio::AudioResponse;
+pub use audio::{AudioManager, AudioTrack, UiAudioEvent};
+#[cfg(feature = "audio")]
+pub use audio::{load_sound_data, sound_data_from_mono_samples};
 pub use camera::ScreenShake;
 pub use context::{Context, FrameStats};
 pub use glam::{Vec2, Vec3, Vec4};
 pub use input::{GameAction, InputMap, InputState, Key, MouseBinding};
+#[cfg(feature = "audio")]
 pub use kira::sound::static_sound::StaticSoundData;
 pub use math::move_towards;
 pub use physics::{AABB, BoxVolume, CollisionLayer, SpatialGrid, SweepResult};
 pub use sprite::{BlendMode, Rect, RenderLayer};
 
+#[cfg(feature = "egui")]
 pub use egui;
 #[cfg(not(target_arch = "wasm32"))]
 pub use gilrs;
@@ -217,6 +222,10 @@ pub trait GameApp: 'static {
     //* Render the game. Called every frame after `update`.
     //? Use `ctx.draw_sprite()` to submit draw calls. Sprites are rendered after the background but before the UI overlay.
     fn render(&mut self, ctx: &mut Context<Self::Action>);
+    //? Set scene parameters every frame without egui. Called before `ui`.
+    fn scene(&mut self, _ctx: &mut Context<Self::Action>, _scene_params: &mut SceneParams) {}
+
+    #[cfg(feature = "egui")]
     fn ui(
         &mut self,
         _egui_ctx: &egui::Context,
@@ -254,4 +263,13 @@ pub fn run<G: GameApp>() {
 pub fn run_wasm<G: GameApp>() {
     init_logging();
     runtime::start::<G>();
+}
+
+//* Pause or resume a web scene. While paused the engine requests no animation frames, so a scene the page has hidden
+//* costs nothing; resuming carries on from where it stopped. A no-op on native, where the window owns the loop.
+pub fn set_paused(paused: bool) {
+    #[cfg(target_arch = "wasm32")]
+    runtime::set_web_paused(paused);
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = paused;
 }

@@ -3,6 +3,7 @@
 *?  Defines the Texture struct and methods
 *?  for loading/creating a single GPU texture.
 *-----------------------------------------------**/
+#[cfg(feature = "image")]
 use image::GenericImageView;
 
 //? A loaded GPU texture created from image bytes or a DynamicImage.
@@ -17,6 +18,7 @@ pub struct Texture {
 //? Various constructors for creating textures from different
 //? sources (bytes, DynamicImage, or a white pixel).
 impl Texture {
+    #[cfg(feature = "image")]
     pub fn from_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -27,6 +29,7 @@ impl Texture {
         Self::from_image(device, queue, &img, label)
     }
 
+    #[cfg(feature = "image")]
     pub fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

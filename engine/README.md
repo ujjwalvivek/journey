@@ -18,6 +18,8 @@ A cross-platform 2D game engine built with Rust and wGPU.
 - **Cross-platform audio** via Kira with music, ambience, SFX, and UI sub-tracks
 - **Orthographic camera** with screen shake
 - **egui integration** for debug UI overlays
+- **Optional features** `egui`, `audio` and `image` (all on by default): a web scene that needs none of them builds with `default-features = false`, at less than half the size
+- **Web pause** with `engine::set_paused`, so a hidden scene requests no frames
 - **Configurable internal resolution** (default 640×360, nearest-neighbor upscale)
 
 ## Quick Start

@@ -414,6 +414,7 @@ pub trait AudioResponse {
     fn with_tab_sound(self, pending: &mut Vec<UiAudioEvent>) -> Self;
 }
 
+#[cfg(feature = "egui")]
 impl AudioResponse for egui::Response {
     fn with_ui_sound(self, pending: &mut Vec<UiAudioEvent>) -> Self {
         let id = self.id;

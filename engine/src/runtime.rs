@@ -12,6 +12,7 @@ use crate::sprite::SpriteRenderer;
 use crate::time::FixedTime;
 use crate::{BloomSettings, SceneParams};
 use bytemuck::{Pod, Zeroable};
+#[cfg(feature = "egui")]
 use egui_wgpu::ScreenDescriptor;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -69,6 +70,30 @@ enum RenderPacing {
 thread_local! {
     static PENDING_STATE: std::cell::RefCell<Option<Box<dyn std::any::Any>>> =
         const { std::cell::RefCell::new(None) };
+    static WEB_WINDOW: std::cell::RefCell<Option<Arc<Window>>> = const { std::cell::RefCell::new(None) };
+}
+
+//? Web pause. While paused the loop stops requesting animation frames, so a hidden scene costs nothing.
+//? Resuming requests one frame and the loop carries on; the first frame's delta is capped like any other.
+#[cfg(target_arch = "wasm32")]
+static WEB_PAUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn set_web_paused(paused: bool) {
+    use std::sync::atomic::Ordering;
+    let was = WEB_PAUSED.swap(paused, Ordering::Relaxed);
+    if was && !paused {
+        WEB_WINDOW.with(|w| {
+            if let Some(window) = w.borrow().as_ref() {
+                window.request_redraw();
+            }
+        });
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn web_paused() -> bool {
+    WEB_PAUSED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 //? Launch the engine event loop. Blocks on native; non-blocking on WASM.
@@ -136,6 +161,7 @@ impl<G: GameApp> ApplicationHandler for App<G> {
         );
 
         #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(feature = "image")]
         {
             if let Some(icon_bytes) = G::window_icon()
                 && let Ok(img) = image::load_from_memory(icon_bytes)
@@ -165,6 +191,7 @@ impl<G: GameApp> ApplicationHandler for App<G> {
         {
             use winit::platform::web::WindowExtWebSys;
 
+            WEB_WINDOW.with(|w| *w.borrow_mut() = Some(window.clone()));
             if let Some(canvas) = window.canvas() {
                 let doc = web_sys::window()
                     .and_then(|w| w.document())
@@ -204,10 +231,10 @@ impl<G: GameApp> ApplicationHandler for App<G> {
         #[cfg(target_arch = "wasm32")]
         if self.state.is_none() {
             PENDING_STATE.with(|cell| {
-                if let Some(boxed) = cell.borrow_mut().take() {
-                    if let Ok(state) = boxed.downcast::<EngineState<G>>() {
-                        self.state = Some(*state);
-                    }
+                if let Some(boxed) = cell.borrow_mut().take()
+                    && let Ok(state) = boxed.downcast::<EngineState<G>>()
+                {
+                    self.state = Some(*state);
                 }
             });
             //? The canvas may have been laid out / resized while the async GPU
@@ -276,9 +303,12 @@ impl<G: GameApp> ApplicationHandler for App<G> {
 
         //? Forward to egui and check if it wants to consume the event (eg. for UI interaction).
         //? If so, request a redraw to update the UI.
-        let response = state.egui_state.on_window_event(&state.window, &event);
-        if response.repaint {
-            state.window.request_redraw();
+        #[cfg(feature = "egui")]
+        {
+            let response = state.egui_state.on_window_event(&state.window, &event);
+            if response.repaint {
+                state.window.request_redraw();
+            }
         }
 
         //? Handle other window events (resize, redraw, close)
@@ -287,13 +317,18 @@ impl<G: GameApp> ApplicationHandler for App<G> {
             WindowEvent::Resized(size) => {
                 state.resize(size);
                 //? Ensure egui state is synced with new dimensions/DPI
-                let scale_factor = state.window.scale_factor() as f32;
-                state.egui_ctx.set_pixels_per_point(scale_factor);
+                #[cfg(feature = "egui")]
+                {
+                    let scale_factor = state.window.scale_factor() as f32;
+                    state.egui_ctx.set_pixels_per_point(scale_factor);
+                }
                 state.window.request_redraw();
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 //? DPI changed (e.g., dragged to another monitor or DevTools device switch)
+                #[cfg(feature = "egui")]
                 state.egui_ctx.set_pixels_per_point(scale_factor as f32);
+                let _ = scale_factor;
                 let size = state.window.inner_size();
                 state.resize(size);
                 state.window.request_redraw();
@@ -337,30 +372,29 @@ impl<G: GameApp> ApplicationHandler for App<G> {
             #[cfg(target_arch = "wasm32")]
             {
                 use winit::platform::web::WindowExtWebSys;
-                if let Some(canvas) = state.window.canvas() {
-                    if let Some(web_window) = web_sys::window() {
-                        let dpr = web_window.device_pixel_ratio();
-                        let css_w = canvas.client_width() as f64;
-                        let css_h = canvas.client_height() as f64;
-                        let phys_w = (css_w * dpr).round() as u32;
-                        let phys_h = (css_h * dpr).round() as u32;
+                if let Some(canvas) = state.window.canvas()
+                    && let Some(web_window) = web_sys::window()
+                {
+                    let dpr = web_window.device_pixel_ratio();
+                    let css_w = canvas.client_width() as f64;
+                    let css_h = canvas.client_height() as f64;
+                    let phys_w = (css_w * dpr).round() as u32;
+                    let phys_h = (css_h * dpr).round() as u32;
 
-                        //? Skip resize if dimensions are too small (portrait warning showing)
+                    //? Skip resize if dimensions are too small (portrait warning showing)
 
-                        let dpr_changed = (dpr - state.scale_factor).abs() > 0.01;
-                        let size_changed =
-                            phys_w != state.config.width || phys_h != state.config.height;
+                    let dpr_changed = (dpr - state.scale_factor).abs() > 0.01;
+                    let size_changed =
+                        phys_w != state.config.width || phys_h != state.config.height;
 
-                        if phys_w >= MIN_WIDTH
-                            && phys_h >= MIN_HEIGHT
-                            && (size_changed || dpr_changed)
-                        {
-                            canvas.set_width(phys_w);
-                            canvas.set_height(phys_h);
-                            state.resize(winit::dpi::PhysicalSize::new(phys_w, phys_h));
-                            state.egui_ctx.set_pixels_per_point(dpr as f32);
-                            state.window.request_redraw();
-                        }
+                    if phys_w >= MIN_WIDTH && phys_h >= MIN_HEIGHT && (size_changed || dpr_changed)
+                    {
+                        canvas.set_width(phys_w);
+                        canvas.set_height(phys_h);
+                        state.resize(winit::dpi::PhysicalSize::new(phys_w, phys_h));
+                        #[cfg(feature = "egui")]
+                        state.egui_ctx.set_pixels_per_point(dpr as f32);
+                        state.window.request_redraw();
                     }
                 }
             }
@@ -394,6 +428,11 @@ impl<G: GameApp> ApplicationHandler for App<G> {
             //? Schedule next frame. On WASM this requests a requestAnimationFrame
             //? callback. On native this posts WM_PAINT to keep the event loop awake
             //? (the actual render already happened above, so RedrawRequested is a no-op).
+            //? A paused web scene schedules nothing until `set_paused(false)`.
+            #[cfg(target_arch = "wasm32")]
+            if web_paused() {
+                return;
+            }
             state.window.request_redraw();
             #[cfg(not(target_arch = "wasm32"))]
             {
@@ -427,8 +466,11 @@ struct EngineState<G: GameApp> {
     atmosphere_bind_group: wgpu::BindGroup,
     sky_buffer: Vec<u8>,
     fog_buffer: Vec<u8>,
+    #[cfg(feature = "egui")]
     egui_ctx: egui::Context,
+    #[cfg(feature = "egui")]
     egui_state: egui_winit::State,
+    #[cfg(feature = "egui")]
     egui_renderer: egui_wgpu::Renderer,
     camera: Camera,
     sprite_renderer: SpriteRenderer,
@@ -464,8 +506,35 @@ impl<G: GameApp> EngineState<G> {
         let size = window.inner_size();
 
         //? Create wGPU instance, surface, adapter, device, and configure the surface for rendering.
+        //? On the web wgpu uses WebGPU whenever navigator.gpu exists, even when no adapter comes back (blocklisted GPUs,
+        //? headless browsers), and a canvas that has handed out a WebGPU context can never give a WebGL2 one. So probe for
+        //? a WebGPU adapter first, without a surface, and fall back to WebGL2 (the GL backend) when there is none.
+        #[cfg(target_arch = "wasm32")]
+        let backends = {
+            let probe = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                backends: wgpu::Backends::BROWSER_WEBGPU,
+                ..Default::default()
+            });
+            let webgpu = probe
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::default(),
+                    compatible_surface: None,
+                    force_fallback_adapter: false,
+                })
+                .await
+                .is_ok();
+            if webgpu {
+                wgpu::Backends::all()
+            } else {
+                log::warn!("No WebGPU adapter, using WebGL2");
+                wgpu::Backends::GL
+            }
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let backends = wgpu::Backends::all();
+
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
+            backends,
             ..Default::default()
         });
 
@@ -810,30 +879,35 @@ impl<G: GameApp> EngineState<G> {
             cache: None,
         });
 
-        //? Initialize egui context, state, and renderer.
-        let egui_ctx = egui::Context::default();
+        #[cfg(feature = "egui")]
+        let (egui_ctx, egui_state, egui_renderer) = {
+            //? Initialize egui context, state, and renderer.
+            let egui_ctx = egui::Context::default();
 
-        let ui_theme = crate::ui::theme();
-        let mut visuals = egui::Visuals::dark();
-        visuals.window_fill = ui_theme.panel;
-        visuals.window_corner_radius = egui::CornerRadius::same(0);
-        visuals.window_shadow = egui::Shadow::NONE;
-        visuals.panel_fill = ui_theme.panel;
-        egui_ctx.set_visuals(visuals);
+            let ui_theme = crate::ui::theme();
+            let mut visuals = egui::Visuals::dark();
+            visuals.window_fill = ui_theme.panel;
+            visuals.window_corner_radius = egui::CornerRadius::same(0);
+            visuals.window_shadow = egui::Shadow::NONE;
+            visuals.panel_fill = ui_theme.panel;
+            egui_ctx.set_visuals(visuals);
 
-        let egui_state = egui_winit::State::new(
-            egui_ctx.clone(),
-            egui::ViewportId::ROOT,
-            &window,
-            Some(window.scale_factor() as f32),
-            None,
-            None,
-        );
-        let egui_renderer = egui_wgpu::Renderer::new(
-            &device,
-            render_format,
-            egui_wgpu::RendererOptions::default(),
-        );
+            let egui_state = egui_winit::State::new(
+                egui_ctx.clone(),
+                egui::ViewportId::ROOT,
+                &window,
+                Some(window.scale_factor() as f32),
+                None,
+                None,
+            );
+            let egui_renderer = egui_wgpu::Renderer::new(
+                &device,
+                render_format,
+                egui_wgpu::RendererOptions::default(),
+            );
+
+            (egui_ctx, egui_state, egui_renderer)
+        };
 
         //? Camera and context use the fixed internal resolution.
         let scale_factor = window.scale_factor();
@@ -859,6 +933,12 @@ impl<G: GameApp> EngineState<G> {
         }
 
         //? Load each texture the game requested and create bind groups
+        #[cfg(not(feature = "image"))]
+        assert!(
+            context.pending_textures.is_empty(),
+            "journey-engine built without the image feature"
+        );
+        #[cfg(feature = "image")]
         for pending in &context.pending_textures {
             let texture = crate::texture::Texture::from_bytes(
                 &device,
@@ -905,8 +985,11 @@ impl<G: GameApp> EngineState<G> {
             atmosphere_bind_group,
             sky_buffer,
             fog_buffer,
+            #[cfg(feature = "egui")]
             egui_ctx,
+            #[cfg(feature = "egui")]
             egui_state,
+            #[cfg(feature = "egui")]
             egui_renderer,
             camera,
             sprite_renderer,
@@ -995,7 +1078,10 @@ impl<G: GameApp> EngineState<G> {
 
     fn flush_pending_cursor_moved(&mut self) {
         if let Some(event) = self.pending_cursor_moved.take() {
+            #[cfg(feature = "egui")]
             let _ = self.egui_state.on_window_event(&self.window, &event);
+            #[cfg(not(feature = "egui"))]
+            let _ = event;
         }
     }
 
@@ -1040,13 +1126,21 @@ impl<G: GameApp> EngineState<G> {
         let mut params = self.params.clone();
         self.context.scene_params_override = None;
         self.context.bloom_override = None;
+        self.game.scene(&mut self.context, &mut params);
+        #[cfg(feature = "egui")]
         let mut raw_input = self.egui_state.take_egui_input(&self.window);
+        #[cfg(feature = "egui")]
         let ppp = self.egui_ctx.pixels_per_point();
-        raw_input.screen_rect = Some(egui::Rect::from_min_size(
-            egui::pos2(vp_x / ppp, vp_y / ppp),
-            egui::vec2(vp_w / ppp, vp_h / ppp),
-        ));
+        #[cfg(feature = "egui")]
+        {
+            raw_input.screen_rect = Some(egui::Rect::from_min_size(
+                egui::pos2(vp_x / ppp, vp_y / ppp),
+                egui::vec2(vp_w / ppp, vp_h / ppp),
+            ));
+        }
+        #[cfg(feature = "egui")]
         let ctx = &mut self.context;
+        #[cfg(feature = "egui")]
         let full_output = self.egui_ctx.run(raw_input, |egui_ctx| {
             crate::ui::apply_theme(egui_ctx);
             self.game.ui(egui_ctx, ctx, &mut params);
@@ -1068,6 +1162,7 @@ impl<G: GameApp> EngineState<G> {
             || params.fog_anim_speed != self.params.fog_anim_speed;
 
         self.params = params;
+        #[cfg(feature = "egui")]
         self.egui_state
             .handle_platform_output(&self.window, full_output.platform_output);
 
@@ -1197,22 +1292,27 @@ impl<G: GameApp> EngineState<G> {
             bytemuck::bytes_of(&BloomUniform::from(bloom_settings)),
         );
 
-        //? Tessellate egui shapes into GPU primitives,
-        //? using the same pixels_per_point for correct scaling on high-DPI displays.
-        let clipped_primitives = self
-            .egui_ctx
-            .tessellate(full_output.shapes, full_output.pixels_per_point);
+        #[cfg(feature = "egui")]
+        let (clipped_primitives, screen) = {
+            //? Tessellate egui shapes into GPU primitives,
+            //? using the same pixels_per_point for correct scaling on high-DPI displays.
+            let clipped_primitives = self
+                .egui_ctx
+                .tessellate(full_output.shapes, full_output.pixels_per_point);
 
-        //? Create a screen descriptor for egui rendering, matching the surface size and pixels_per_point.
-        let screen = ScreenDescriptor {
-            size_in_pixels: [self.config.width, self.config.height],
-            pixels_per_point: full_output.pixels_per_point,
+            //? Create a screen descriptor for egui rendering, matching the surface size and pixels_per_point.
+            let screen = ScreenDescriptor {
+                size_in_pixels: [self.config.width, self.config.height],
+                pixels_per_point: full_output.pixels_per_point,
+            };
+
+            for (id, delta) in &full_output.textures_delta.set {
+                self.egui_renderer
+                    .update_texture(&self.device, &self.queue, *id, delta);
+            }
+
+            (clipped_primitives, screen)
         };
-
-        for (id, delta) in &full_output.textures_delta.set {
-            self.egui_renderer
-                .update_texture(&self.device, &self.queue, *id, delta);
-        }
 
         //? Begin encoding commands for the frame.
         //* Multiple render passes: one for the full-screen atmosphere quad, one for the sprites, and one for the egui overlay.
@@ -1222,6 +1322,7 @@ impl<G: GameApp> EngineState<G> {
                 label: Some("Render Encoder"),
             });
 
+        #[cfg(feature = "egui")]
         self.egui_renderer.update_buffers(
             &self.device,
             &self.queue,
@@ -1306,6 +1407,7 @@ impl<G: GameApp> EngineState<G> {
         }
 
         //? Pass 4: egui overlay → surface (native resolution for crisp debug text)
+        #[cfg(feature = "egui")]
         {
             let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("UI Pass"),
@@ -1330,6 +1432,7 @@ impl<G: GameApp> EngineState<G> {
         }
 
         //? Free any egui textures that were marked for deletion in this frame.
+        #[cfg(feature = "egui")]
         for id in &full_output.textures_delta.free {
             self.egui_renderer.free_texture(id);
         }
@@ -1341,12 +1444,11 @@ impl<G: GameApp> EngineState<G> {
         #[cfg(target_arch = "wasm32")]
         if !self.first_frame_event_sent {
             self.first_frame_event_sent = true;
-            if let Some(event_name) = G::wasm_ready_event() {
-                if let Some(web_window) = web_sys::window()
-                    && let Ok(event) = web_sys::Event::new(event_name)
-                {
-                    let _ = web_window.dispatch_event(&event);
-                }
+            if let Some(event_name) = G::wasm_ready_event()
+                && let Some(web_window) = web_sys::window()
+                && let Ok(event) = web_sys::Event::new(event_name)
+            {
+                let _ = web_window.dispatch_event(&event);
             }
         }
 

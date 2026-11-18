@@ -75,6 +75,7 @@ pub struct Context<A: GameAction> {
 }
 
 //? A texture load request queued by the game during init.
+#[cfg_attr(not(feature = "image"), allow(dead_code))]
 pub(crate) struct PendingTexture {
     pub bytes: &'static [u8],
     pub label: String,

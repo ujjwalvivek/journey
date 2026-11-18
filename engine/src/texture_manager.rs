@@ -29,6 +29,7 @@ impl TextureManager {
 
     //? Load a texture from image bytes and create a corresponding bind group.
     //* Returns a TextureHandle that can be used to retrieve the texture and bind group later.
+    #[cfg(feature = "image")]
     pub fn load_from_bytes(
         &mut self,
         device: &wgpu::Device,

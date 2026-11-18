@@ -1,15 +1,10 @@
-## Journey Engine v1.3.0 - Release Notes
+## Journey Engine v1.4.0 - Release Notes
 
-This update, focus was on raising the limits of the engine, whilst making it more performant and feature-rich.
+This update makes the engine lighter for web scenes that only draw, and steadier in browsers.
 
-- Added engine benchmark sandbox with optional physics mode.
-- Raised sprite renderer capacity to 65,536 sprites.
-- Improved native render pacing under high-polling mouse movement upto 8k Hz.
-- Noise shader is now replaced with a sky/fog atmosphere system.
-- Sky transition helper is now available to simulate a day/night cycle.
-- Bloom post-processing is now supported.
-- Sprite render layer has been split into multiple layers with per-layer draw ordering.
-- Improved level rendering.
-- Moved towards a tunable camera system.
-- Added edge aware procedural tile visuals.
-- Level editor now supports undo/redo.
+- egui, audio (Kira) and image loading are now optional features, all on by default, so existing games build unchanged.
+- A web scene that needs none of them can set `default-features = false`. A hero scene measured 4.2 MB of wasm with them and 2.1 MB without (1.93 MB to 0.82 MB gzip); egui's bundled fonts alone were 1.4 MB.
+- New `GameApp::scene` hook sets scene parameters every frame without egui. `ui` still works as before when the egui feature is on.
+- New `engine::set_paused` for the web: a paused scene requests no animation frames, and resuming carries on where it stopped.
+- When a browser exposes WebGPU but returns no adapter (blocklisted GPUs, headless browsers), the engine now falls back to WebGL2 instead of panicking.
+- Cleared the lints and future-incompatibility warnings raised by newer Rust toolchains.

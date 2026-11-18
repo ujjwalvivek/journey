@@ -1,10 +1,10 @@
 /**--------------------------------------------------------------------------------
-*!  Enemy system for 1-hit-kill momentum platformer.
-*?  Enemies are traversal nodes that patrol their spawn platform, never falling off.
-*?  Three types (Grunt, Sniper, Ronin) share the same FSM but differ in behavior
-*?  via a data-driven EnemyConfig table.
-*?  Core mechanic: Shoot → Player Parries → Enemy Staggers → Player Grapples → Execute.
-*--------------------------------------------------------------------------------**/
+ *!  Enemy system for 1-hit-kill momentum platformer.
+ *?  Enemies are traversal nodes that patrol their spawn platform, never falling off.
+ *?  Three types (Grunt, Sniper, Ronin) share the same FSM but differ in behavior
+ *?  via a data-driven EnemyConfig table.
+ *?  Core mechanic: Shoot → Player Parries → Enemy Staggers → Player Grapples → Execute.
+ *--------------------------------------------------------------------------------**/
 use crate::combat::fsm::{self, CombatPhase};
 use crate::combat::moves::{MoveDatabase, MoveId};
 use crate::config::{self, *};

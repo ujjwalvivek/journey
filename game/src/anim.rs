@@ -1,8 +1,8 @@
 /**---------------------------------------------------------------------------
-*!  Grid-based spritesheet animation system.
-*?  Each animation references a range of frames within a single spritesheet
-*?  grid and calculates frame rects dynamically.
-*---------------------------------------------------------------------------**/
+ *!  Grid-based spritesheet animation system.
+ *?  Each animation references a range of frames within a single spritesheet
+ *?  grid and calculates frame rects dynamically.
+ *---------------------------------------------------------------------------**/
 use engine::Rect;
 
 #[derive(Clone)]

@@ -1,9 +1,9 @@
 /**--------------------------------------------------------------------------------
-*!  Cross-platform engine runtime and wGPU rendering loop with egui overlay.
-*?  Handles both native (desktop) and WASM (web) targets. The core rendering
-*?  pipeline (CPU atmosphere → GPU textures → full-screen quad + egui overlay) is
-*?  shared; only event-loop bootstrap and async GPU initialization differ.
-*--------------------------------------------------------------------------------**/
+ *!  Cross-platform engine runtime and wGPU rendering loop with egui overlay.
+ *?  Handles both native (desktop) and WASM (web) targets. The core rendering
+ *?  pipeline (CPU atmosphere → GPU textures → full-screen quad + egui overlay) is
+ *?  shared; only event-loop bootstrap and async GPU initialization differ.
+ *--------------------------------------------------------------------------------**/
 use crate::GameApp;
 use crate::atmosphere;
 use crate::camera::Camera;

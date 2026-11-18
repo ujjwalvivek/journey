@@ -1,12 +1,12 @@
 /**--------------------------------------------------------------------------------
-*!  Player controller
-*?  State-machine-driven: each PlayerState handles its own movement,
-*?  transitions, coyote timings, jump buffering, and animations.
-*?  Combat FSM handles frame-data timing.
-*?  Uses Entity composition for shared physics/combat state.
-*?  Combat input is sampled per render frame but consumed in fixed_update()
-*?  via a tick-stamped CombatInputBuffer for deterministic FSM synchronization.
-*--------------------------------------------------------------------------------**/
+ *!  Player controller
+ *?  State-machine-driven: each PlayerState handles its own movement,
+ *?  transitions, coyote timings, jump buffering, and animations.
+ *?  Combat FSM handles frame-data timing.
+ *?  Uses Entity composition for shared physics/combat state.
+ *?  Combat input is sampled per render frame but consumed in fixed_update()
+ *?  via a tick-stamped CombatInputBuffer for deterministic FSM synchronization.
+ *--------------------------------------------------------------------------------**/
 use crate::anim::AnimationState;
 use crate::assets::{FRAME_HEIGHT, FRAME_WIDTH};
 use crate::audio::AudioEvent;

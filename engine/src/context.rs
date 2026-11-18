@@ -1,6 +1,6 @@
 /**----------------------------------------------------
-*!  Game context providing access to engine systems.
-*----------------------------------------------------**/
+ *!  Game context providing access to engine systems.
+ *----------------------------------------------------**/
 use crate::audio::{AudioManager, UiAudioEvent};
 use crate::input::{GameAction, InputState};
 use crate::sprite::{BlendMode, Rect, RenderLayer, Sprite};

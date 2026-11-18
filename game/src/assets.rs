@@ -1,23 +1,23 @@
 /**----------------------------------------------------------------------
-*!  Game assets spritesheets, grid-based animation definitions.
-*?  Combat animation durations are derived from FSM frame data so
-*?  visual playback stays locked to combat timing.
-*?  Grid layout: 5 columns × 13 rows, 100×100 px per cell.
-*?  Player Spritesheet row mapping:
-*?    Row 0 (0-3):   Idle         4 frames
-*?    Row 1 (5-8):   Run          4 frames
-*?    Row 2 (10-14): Jump         5 frames (10-12 ascend, 13-14 fall)
-*?    Row 3 (15-18): Death        4 frames
-*?    Row 4 (20-23): Parry        4 frames
-*?    Row 5 (25-28): AttackHoriz  4 frames
-*?    Row 6 (30-33): AttackUp     4 frames
-*?    Row 7 (35-38): AttackDown   4 frames
-*?    Row 8 (40-43): Dash         4 frames
-*?    Row 9 (45-47): WallGrab     3 frames
-*?    Row 10 (50-51): GrappleSame 2 frames
-*?    Row 11 (55-56): GrappleUp   2 frames
-*?    Row 12 (60-61): GrappleDown 2 frames
-*----------------------------------------------------------------------**/
+ *!  Game assets spritesheets, grid-based animation definitions.
+ *?  Combat animation durations are derived from FSM frame data so
+ *?  visual playback stays locked to combat timing.
+ *?  Grid layout: 5 columns × 13 rows, 100×100 px per cell.
+ *?  Player Spritesheet row mapping:
+ *?    Row 0 (0-3):   Idle         4 frames
+ *?    Row 1 (5-8):   Run          4 frames
+ *?    Row 2 (10-14): Jump         5 frames (10-12 ascend, 13-14 fall)
+ *?    Row 3 (15-18): Death        4 frames
+ *?    Row 4 (20-23): Parry        4 frames
+ *?    Row 5 (25-28): AttackHoriz  4 frames
+ *?    Row 6 (30-33): AttackUp     4 frames
+ *?    Row 7 (35-38): AttackDown   4 frames
+ *?    Row 8 (40-43): Dash         4 frames
+ *?    Row 9 (45-47): WallGrab     3 frames
+ *?    Row 10 (50-51): GrappleSame 2 frames
+ *?    Row 11 (55-56): GrappleUp   2 frames
+ *?    Row 12 (60-61): GrappleDown 2 frames
+ *----------------------------------------------------------------------**/
 use crate::anim::Animation;
 use crate::combat::moves::MoveDatabase;
 

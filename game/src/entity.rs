@@ -1,9 +1,9 @@
 /**--------------------------------------------------------------------------------
-*!  Generic game entity: Shared foundation for Player, Enemy, and NPC.
-*?  Holds physics state, combat components, and collision boxes.
-*?  System functions operate on entities generically so the same physics
-*?  and combat logic applies to all actors.
-*--------------------------------------------------------------------------------**/
+ *!  Generic game entity: Shared foundation for Player, Enemy, and NPC.
+ *?  Holds physics state, combat components, and collision boxes.
+ *?  System functions operate on entities generically so the same physics
+ *?  and combat logic applies to all actors.
+ *--------------------------------------------------------------------------------**/
 use crate::combat::fsm::CombatPhase;
 use crate::combat::moves::MoveDatabase;
 use crate::combat::{CombatState, Health};

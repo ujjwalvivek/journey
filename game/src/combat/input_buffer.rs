@@ -1,9 +1,9 @@
 /**--------------------------------------------------------------------------------
-*!  Tick-stamped combat input buffer.
-*?  Bridges the gap between per-frame input sampling and fixed-rate FSM updates.
-*?  Inputs are queued with a tick stamp and consumed within a configurable
-*?  frame window, ensuring rapid clicks are never lost between fixed steps.
-*--------------------------------------------------------------------------------**/
+ *!  Tick-stamped combat input buffer.
+ *?  Bridges the gap between per-frame input sampling and fixed-rate FSM updates.
+ *?  Inputs are queued with a tick stamp and consumed within a configurable
+ *?  frame window, ensuring rapid clicks are never lost between fixed steps.
+ *--------------------------------------------------------------------------------**/
 use super::fsm::{self, CombatState};
 use super::moves::{MoveDatabase, MoveId};
 use std::collections::VecDeque;

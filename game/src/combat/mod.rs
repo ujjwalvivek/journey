@@ -1,9 +1,9 @@
 /**--------------------------------------------------------------------------------
-*!  Combat system types for Sekiro-Ghostrunner-style gameplay.
-*?  Defines Health, Hitbox, and the frame-deterministic combat FSM.
-*?  All combat timing uses integer tick counts (at 60Hz) for deterministic
-*?  frame-data windows - never float accumulators.
-*--------------------------------------------------------------------------------**/
+ *!  Combat system types for Sekiro-Ghostrunner-style gameplay.
+ *?  Defines Health, Hitbox, and the frame-deterministic combat FSM.
+ *?  All combat timing uses integer tick counts (at 60Hz) for deterministic
+ *?  frame-data windows - never float accumulators.
+ *--------------------------------------------------------------------------------**/
 pub mod fsm;
 pub mod input_buffer;
 pub mod moves;

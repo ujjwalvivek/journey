@@ -23,10 +23,10 @@ impl<const N: usize> PcmBuffer<N> {
     ) {
         let ms_per_sample = 1000.0 / sample_rate as f32;
 
-        for i in 0..N {
+        for sample in self.samples.iter_mut() {
             let gain = env_state.tick(envelope, ms_per_sample);
             let raw = osc_fn(*phase);
-            self.samples[i] = (raw as f32 * gain) as i16;
+            *sample = (raw as f32 * gain) as i16;
             *phase = phase.wrapping_add(phase_inc);
         }
         self.len = N;
@@ -47,17 +47,17 @@ impl<const N: usize> PcmBuffer<N> {
     ) {
         let ms_per_sample = 1000.0 / sample_rate as f32;
 
-        for i in 0..N {
+        for sample in self.samples.iter_mut() {
             let gain = env_state.tick(envelope, ms_per_sample);
             let raw = osc_fn(*phase, band);
-            self.samples[i] = (raw as f32 * gain) as i16;
+            *sample = (raw as f32 * gain) as i16;
             *phase = phase.wrapping_add(phase_inc);
         }
         self.len = N;
     }
     pub fn fill_raw(&mut self, osc_fn: fn(u64) -> i16, phase_inc: u64, phase: &mut u64) {
-        for i in 0..N {
-            self.samples[i] = osc_fn(*phase);
+        for sample in self.samples.iter_mut() {
+            *sample = osc_fn(*phase);
             *phase = phase.wrapping_add(phase_inc);
         }
         self.len = N;

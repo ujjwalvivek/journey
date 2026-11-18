@@ -1,10 +1,10 @@
 /**--------------------------------------------------------------------------------
-*!  Projectile system for enemy ranged attacks.
-*?  Projectiles are simple AABB entities that move in a straight line.
-*?  They despawn after first bounce, kill the player on hurtbox contact,
-*?  and are deflected (destroyed + source enemy staggered) on parry contact.
-*?  Core chain: Enemy shoots → Projectile flies → Player parries → Enemy staggers.
-*--------------------------------------------------------------------------------**/
+ *!  Projectile system for enemy ranged attacks.
+ *?  Projectiles are simple AABB entities that move in a straight line.
+ *?  They despawn after first bounce, kill the player on hurtbox contact,
+ *?  and are deflected (destroyed + source enemy staggered) on parry contact.
+ *?  Core chain: Enemy shoots → Projectile flies → Player parries → Enemy staggers.
+ *--------------------------------------------------------------------------------**/
 use crate::combat::fsm::CombatPhase;
 use crate::combat::moves::MoveId;
 use crate::config::*;

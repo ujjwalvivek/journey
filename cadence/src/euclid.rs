@@ -44,12 +44,6 @@ impl<const MAX_STEPS: usize> EuclideanPattern<MAX_STEPS> {
     }
 
     pub fn active_count(&self) -> usize {
-        let mut count = 0;
-        for index in 0..self.steps {
-            if self.pattern[index] {
-                count += 1;
-            }
-        }
-        count
+        self.pattern[..self.steps].iter().filter(|&&on| on).count()
     }
 }

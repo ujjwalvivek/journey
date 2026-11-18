@@ -1,9 +1,9 @@
 /**--------------------------------------------------------------------------------
-*!  Level Editor
-*?  Toggle with F12
-*?  Visual mode: Pan with WASD/Arrow keys or middle-click drag. Saves on exit.
-*?  Text mode: Edit the raw ASCII level string with a live minimap preview.
-*--------------------------------------------------------------------------------**/
+ *!  Level Editor
+ *?  Toggle with F12
+ *?  Visual mode: Pan with WASD/Arrow keys or middle-click drag. Saves on exit.
+ *?  Text mode: Edit the raw ASCII level string with a live minimap preview.
+ *--------------------------------------------------------------------------------**/
 use crate::level::Level;
 use engine::egui;
 use engine::{AudioResponse, UiAudioEvent, ui as journey_ui};

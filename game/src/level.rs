@@ -1,7 +1,7 @@
 /**--------------------------------------------------------------------------------
-*!  Infinite level generation with platforms and obstacles.
-*?  Level: The Gym - A handcrafted tutorial level to test core mechanics:
-*--------------------------------------------------------------------------------**/
+ *!  Infinite level generation with platforms and obstacles.
+ *?  Level: The Gym - A handcrafted tutorial level to test core mechanics:
+ *--------------------------------------------------------------------------------**/
 use crate::enemy::EnemyType;
 use engine::{AABB, SpatialGrid, Vec2};
 

@@ -1,6 +1,6 @@
 /**----------------------------------------------------------------------
-*!  Action-based input handling for keyboard, mouse, and gamepad.
-*----------------------------------------------------------------------**/
+ *!  Action-based input handling for keyboard, mouse, and gamepad.
+ *----------------------------------------------------------------------**/
 #[cfg(not(target_arch = "wasm32"))]
 use gilrs::{Axis, Button, Event, EventType, Gilrs};
 use std::collections::HashMap;
@@ -294,16 +294,12 @@ impl<A: GameAction> InputState<A> {
     }
 
     pub fn any_gamepad(&self) -> bool {
-        if self.gamepad_axes.iter().any(|&a| a.abs() > 0.1) {
-            return true;
-        }
+        let axes = self.gamepad_axes.iter().any(|&a| a.abs() > 0.1);
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            if self.gamepad_buttons.iter().any(|&b| b) {
-                return true;
-            }
-        }
-        false
+        let buttons = self.gamepad_buttons.iter().any(|&b| b);
+        #[cfg(target_arch = "wasm32")]
+        let buttons = false;
+        axes || buttons
     }
 
     //? Called at the start of each frame. Saves previous state, rebuilds

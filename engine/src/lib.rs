@@ -254,11 +254,11 @@ pub fn run<G: GameApp>() {
 }
 
 /**----------------------------------------------------------------------------
-*!  WASM entry point {requires a default game type at compile time.}
-*?  Note: WASM builds must specify a concrete game type since we can't
-*?  use generics in the #[wasm_bindgen(start)] entry point. Games should
-*?  export their own wasm_main that calls a type-specific run function.
-*----------------------------------------------------------------------------**/
+ *!  WASM entry point {requires a default game type at compile time.}
+ *?  Note: WASM builds must specify a concrete game type since we can't
+ *?  use generics in the #[wasm_bindgen(start)] entry point. Games should
+ *?  export their own wasm_main that calls a type-specific run function.
+ *----------------------------------------------------------------------------**/
 #[cfg(target_arch = "wasm32")]
 pub fn run_wasm<G: GameApp>() {
     init_logging();

@@ -1,9 +1,9 @@
 /**----------------------------------------------------------------------
-*!  Common math helpers used across the engine and game code.
-*?  Move `current` towards `target` by at most `max_delta`.
-*?  Mirrors Unity's `Mathf.MoveTowards`: if the distance is smaller than
-*?  `max_delta` the result snaps exactly to `target`, avoiding overshooting.
-*----------------------------------------------------------------------**/
+ *!  Common math helpers used across the engine and game code.
+ *?  Move `current` towards `target` by at most `max_delta`.
+ *?  Mirrors Unity's `Mathf.MoveTowards`: if the distance is smaller than
+ *?  `max_delta` the result snaps exactly to `target`, avoiding overshooting.
+ *----------------------------------------------------------------------**/
 #[inline]
 pub fn move_towards(current: f32, target: f32, max_delta: f32) -> f32 {
     if (target - current).abs() <= max_delta {

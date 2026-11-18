@@ -1,10 +1,10 @@
 /**--------------------------------------------------------------------------------
-*!  Engine-level, asset-agnostic animation runtime.
-*?  This module contains the generic animation definition (`AnimationDef`) and
-*?  the runtime/state machine (`AnimationState`) that drive frame timing and
-*?  animation switching. It is deliberately asset-agnostic so the `game` crate
-*?  can keep its `AssetKey` enum and map frames->textures locally.
-*--------------------------------------------------------------------------------**/
+ *!  Engine-level, asset-agnostic animation runtime.
+ *?  This module contains the generic animation definition (`AnimationDef`) and
+ *?  the runtime/state machine (`AnimationState`) that drive frame timing and
+ *?  animation switching. It is deliberately asset-agnostic so the `game` crate
+ *?  can keep its `AssetKey` enum and map frames->textures locally.
+ *--------------------------------------------------------------------------------**/
 #[derive(Clone, Debug)]
 pub struct AnimationDef {
     pub name: String,

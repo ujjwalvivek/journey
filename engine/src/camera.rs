@@ -1,6 +1,6 @@
 /**------------------------------------------------------------------------
-*!  Orthographic camera for 2D rendering with pixel-space coordinates.
-*------------------------------------------------------------------------**/
+ *!  Orthographic camera for 2D rendering with pixel-space coordinates.
+ *------------------------------------------------------------------------**/
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec2};
 

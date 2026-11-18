@@ -1,9 +1,9 @@
 /**--------------------------------------------------------------------------------
-*!  Frame-deterministic combat finite state machine.
-*?  Tracks the current combat phase (Idle/Startup/Active/Recovery), a tick
-*?  counter that increments each fixed step, and the current move. Transitions
-*?  are explicit and driven entirely by integer frame counts from MoveData.
-*--------------------------------------------------------------------------------**/
+ *!  Frame-deterministic combat finite state machine.
+ *?  Tracks the current combat phase (Idle/Startup/Active/Recovery), a tick
+ *?  counter that increments each fixed step, and the current move. Transitions
+ *?  are explicit and driven entirely by integer frame counts from MoveData.
+ *--------------------------------------------------------------------------------**/
 use super::moves::{MoveDatabase, MoveId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

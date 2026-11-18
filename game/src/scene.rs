@@ -1,7 +1,7 @@
 /**-------------------------------------------------------------------------------------
-*!  Scene parameter state shared between the UI and renderer.
-*?  Game-specific wrapper around engine `SceneParams` for game specific settings.
-*-------------------------------------------------------------------------------------**/
+ *!  Scene parameter state shared between the UI and renderer.
+ *?  Game-specific wrapper around engine `SceneParams` for game specific settings.
+ *-------------------------------------------------------------------------------------**/
 use crate::combat::fsm::CombatState;
 use crate::combat::input_buffer::CombatInputBuffer;
 use crate::config::PhysicsConfig;

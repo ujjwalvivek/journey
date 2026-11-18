@@ -1,15 +1,15 @@
 /**------------------------------------------------------------------------------------------
-*!  Cross-platform audio manager wrapping Kira.
-*?  Provides lazy initialization (required for WASM where Web Audio API needs a
-*?  user gesture before it can start), named sub-tracks for independent volume
-*?  control, and a simple event-driven API for one-shot SFX.
-*?  Architecture:
-*?  - The `AudioManager` wraps `Option<kira::AudioManager>` for lazy/graceful init.
-*?  - Four sub-tracks: Music, Ambience, SFX, UI each with independent volume.
-*?  - Music/Ambience use handle tracking to prevent overlapping loops.
-*?  - `UiAudioEvent` covers engine-level UI interactions (hover, click, checkbox).
-*?  - `AudioResponse` extension trait auto-wires egui widgets to UI sounds.
-*------------------------------------------------------------------------------------------**/
+ *!  Cross-platform audio manager wrapping Kira.
+ *?  Provides lazy initialization (required for WASM where Web Audio API needs a
+ *?  user gesture before it can start), named sub-tracks for independent volume
+ *?  control, and a simple event-driven API for one-shot SFX.
+ *?  Architecture:
+ *?  - The `AudioManager` wraps `Option<kira::AudioManager>` for lazy/graceful init.
+ *?  - Four sub-tracks: Music, Ambience, SFX, UI each with independent volume.
+ *?  - Music/Ambience use handle tracking to prevent overlapping loops.
+ *?  - `UiAudioEvent` covers engine-level UI interactions (hover, click, checkbox).
+ *?  - `AudioResponse` extension trait auto-wires egui widgets to UI sounds.
+ *------------------------------------------------------------------------------------------**/
 use kira::AudioManager as KiraManager;
 use kira::AudioManagerSettings;
 use kira::DefaultBackend;

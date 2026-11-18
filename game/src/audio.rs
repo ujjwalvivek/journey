@@ -1,9 +1,9 @@
 /**----------------------------------------------------------------------
-*!  Audio asset management: loads all game sounds from embedded bytes.
-*?  Uses embedded OGG assets for authored sounds and procedural generation
-*?  for synth UI/menu audio.
-*?  Sound data is loaded once during init and stored for the game lifetime.
-*----------------------------------------------------------------------**/
+ *!  Audio asset management: loads all game sounds from embedded bytes.
+ *?  Uses embedded OGG assets for authored sounds and procedural generation
+ *?  for synth UI/menu audio.
+ *?  Sound data is loaded once during init and stored for the game lifetime.
+ *----------------------------------------------------------------------**/
 use cadence::{EuclideanPattern, Lfsr, MarkovChain, Transport};
 use engine::{
     AudioManager, AudioTrack, StaticSoundData, UiAudioEvent, load_sound_data,

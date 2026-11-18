@@ -1,9 +1,9 @@
 /**--------------------------------------------------------------------------------
-*!  Procedural atmosphere generation.
-*?  Contains the sky gradient and Perlin fog overlay pipeline used by the engine
-*?  render loop. Sky and fog are uploaded separately so the shader can sample
-*?  sky linearly and fog with nearest filtering.
-*--------------------------------------------------------------------------------**/
+ *!  Procedural atmosphere generation.
+ *?  Contains the sky gradient and Perlin fog overlay pipeline used by the engine
+ *?  render loop. Sky and fog are uploaded separately so the shader can sample
+ *?  sky linearly and fog with nearest filtering.
+ *--------------------------------------------------------------------------------**/
 use crate::SceneParams;
 use noise::{NoiseFn, Perlin};
 
@@ -356,7 +356,7 @@ mod tests {
         let mut cache = None;
         render_fog_to_buffer(&mut buf, w, h, &params, &mut cache);
         assert!(
-            buf.chunks_exact(4).all(|px| px[3] == 0),
+            buf.as_chunks::<4>().0.iter().all(|px| px[3] == 0),
             "All fog pixels should have alpha = 0 when fog is disabled"
         );
     }
@@ -385,7 +385,9 @@ mod tests {
         render_atmosphere_to_buffer(&mut buf, w, h, &params, &mut cache);
 
         assert!(
-            buf.chunks_exact(4)
+            buf.as_chunks::<4>()
+                .0
+                .iter()
                 .any(|px| px[0] > 2 || px[1] > 2 || px[2] > 2),
             "Fog should be able to apply over sky mode"
         );

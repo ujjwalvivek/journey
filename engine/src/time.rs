@@ -1,8 +1,8 @@
 /**--------------------------------------------------------------------------------
-*!  Fixed-timestep timing system for deterministic game logic.
-*?  Provides a monotonic tick counter and accumulator that drives fixed-rate
-*?  updates independently of the display framerate.
-*--------------------------------------------------------------------------------**/
+ *!  Fixed-timestep timing system for deterministic game logic.
+ *?  Provides a monotonic tick counter and accumulator that drives fixed-rate
+ *?  updates independently of the display framerate.
+ *--------------------------------------------------------------------------------**/
 pub const DEFAULT_FIXED_HZ: u32 = 60;
 pub const MAX_STEPS: u32 = 5; //* Cap to prevent spiral of death on very slow frames.
 

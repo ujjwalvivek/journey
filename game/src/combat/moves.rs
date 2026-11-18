@@ -1,9 +1,9 @@
 /**--------------------------------------------------------------------------------
-*!  Data-driven combat move definitions.
-*?  Each combat action is defined by a MoveData struct with integer frame
-*?  counts for Startup, Active, and Recovery phases. A MoveDatabase holds
-*?  all available moves for lookup by MoveId.
-*--------------------------------------------------------------------------------**/
+ *!  Data-driven combat move definitions.
+ *?  Each combat action is defined by a MoveData struct with integer frame
+ *?  counts for Startup, Active, and Recovery phases. A MoveDatabase holds
+ *?  all available moves for lookup by MoveId.
+ *--------------------------------------------------------------------------------**/
 use engine::Vec2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

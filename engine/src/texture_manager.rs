@@ -1,9 +1,9 @@
 /**----------------------------------------------------------------------------
-*!  Texture asset management.
-*?  Manages all textures in the game. Loads textures using Texture,
-*?  stores them, and provides handles for safe access.
-*?  Manages bind groups for shader access for loading/creating a single GPU texture.
-*-----------------------------------------------------------------------------**/
+ *!  Texture asset management.
+ *?  Manages all textures in the game. Loads textures using Texture,
+ *?  stores them, and provides handles for safe access.
+ *?  Manages bind groups for shader access for loading/creating a single GPU texture.
+ *-----------------------------------------------------------------------------**/
 use crate::texture::Texture;
 
 //? Handle to a loaded texture. Encapsulates the index into the

@@ -1,6 +1,6 @@
 /**----------------------------------------------------------------------
-*!  Journey-specific input actions and default bindings.
-*----------------------------------------------------------------------**/
+ *!  Journey-specific input actions and default bindings.
+ *----------------------------------------------------------------------**/
 use engine::{GameAction, Key, MouseBinding};
 
 //? All input actions available in Journey.

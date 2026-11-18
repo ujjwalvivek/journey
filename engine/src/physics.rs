@@ -1,8 +1,8 @@
 /**------------------------------------------------------------
-*!  Basic 2D physics primitives for collision detection.
-*?  Usage: Use AABB for player, enemies, platforms,
-*?  and any rectangular object needing collision checks.
-*------------------------------------------------------------**/
+ *!  Basic 2D physics primitives for collision detection.
+ *?  Usage: Use AABB for player, enemies, platforms,
+ *?  and any rectangular object needing collision checks.
+ *------------------------------------------------------------**/
 use glam::Vec2;
 use std::collections::HashMap;
 

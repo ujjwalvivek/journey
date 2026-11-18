@@ -1,11 +1,11 @@
 /**--------------------------------------------------------------------------------
-*!  2D sprite rendering system with sprite sheet support.
-*?  Supports:
-*?  - Instanced rendering for performance
-*?  - Sprite sheets with UV coordinates
-*?  - Color tinting
-*?  - Multiple textures
-*--------------------------------------------------------------------------------**/
+ *!  2D sprite rendering system with sprite sheet support.
+ *?  Supports:
+ *?  - Instanced rendering for performance
+ *?  - Sprite sheets with UV coordinates
+ *?  - Color tinting
+ *?  - Multiple textures
+ *--------------------------------------------------------------------------------**/
 use bytemuck::{Pod, Zeroable};
 use glam::Vec2;
 use wgpu::util::DeviceExt;

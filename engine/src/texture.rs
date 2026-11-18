@@ -1,8 +1,8 @@
 /**-----------------------------------------------
-*!  Texture loading and management.
-*?  Defines the Texture struct and methods
-*?  for loading/creating a single GPU texture.
-*-----------------------------------------------**/
+ *!  Texture loading and management.
+ *?  Defines the Texture struct and methods
+ *?  for loading/creating a single GPU texture.
+ *-----------------------------------------------**/
 #[cfg(feature = "image")]
 use image::GenericImageView;
 

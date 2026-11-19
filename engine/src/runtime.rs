@@ -344,7 +344,9 @@ impl<G: GameApp> ApplicationHandler for App<G> {
                     //? 1/target_fps has passed. The fixed-tick simulation keeps time either way.
                     if state.context.target_fps > 0
                         && !web_paused()
-                        && Instant::now().duration_since(state.last_frame).as_secs_f64()
+                        && Instant::now()
+                            .duration_since(state.last_frame)
+                            .as_secs_f64()
                             < 1.0 / state.context.target_fps as f64 - 0.002
                     {
                         state.window.request_redraw();

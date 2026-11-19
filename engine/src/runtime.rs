@@ -340,6 +340,16 @@ impl<G: GameApp> ApplicationHandler for App<G> {
                 //? which is already decoupled from the DOM event queue.
                 #[cfg(target_arch = "wasm32")]
                 {
+                    //? Cap the visual frame rate on the web too: skip this animation frame until
+                    //? 1/target_fps has passed. The fixed-tick simulation keeps time either way.
+                    if state.context.target_fps > 0
+                        && !web_paused()
+                        && Instant::now().duration_since(state.last_frame).as_secs_f64()
+                            < 1.0 / state.context.target_fps as f64 - 0.002
+                    {
+                        state.window.request_redraw();
+                        return;
+                    }
                     match state.render(RenderPacing::SleepToCap) {
                         Ok(()) => {}
                         Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -372,7 +382,11 @@ impl<G: GameApp> ApplicationHandler for App<G> {
             #[cfg(target_arch = "wasm32")]
             {
                 use winit::platform::web::WindowExtWebSys;
-                if let Some(canvas) = state.window.canvas()
+                //? Reading clientWidth forces a layout, so check every 30th frame, not every frame.
+                static POLL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+                let poll = POLL.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 30 == 0;
+                if poll
+                    && let Some(canvas) = state.window.canvas()
                     && let Some(web_window) = web_sys::window()
                 {
                     let dpr = web_window.device_pixel_ratio();
